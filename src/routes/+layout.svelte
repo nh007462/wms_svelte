@@ -7,7 +7,7 @@
 	);
 </script>
 
-<nav class="bg-blue-600 border-b border-blue-500 dark:bg-blue-900">
+<nav class="sticky top-0 z-50 bg-blue-600 border-b border-blue-500 dark:bg-blue-900">
 	<div class="max-w-screen-xl flex flex-wrap items-center justify-between mx-auto p-1 h-16">
 		<span class="self-center text-2xl font-bold text-white tracking-wide">
 			<a href="/" class="text-white hover:text-blue-200"> WebRTC Music Session </a>
