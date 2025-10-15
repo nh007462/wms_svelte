@@ -1,5 +1,5 @@
 <h1 class="text-3xl font-bold underline">
-  Hello world!
+  Hello svelte!
 </h1>
 
 <style lang="postcss">
