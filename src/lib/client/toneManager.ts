@@ -37,14 +37,15 @@ export const availableInstruments: string[] = [
 class ToneManager {
   private instruments: Map<string, Tone.Sampler> = new Map();
   private audioContextStarted: boolean = false;
-  private micStream: MediaStream | null = null;
-  private micSourceNode: MediaStreamAudioSourceNode | null = null;
+  private extHasBeenSet: boolean = false;
   public localInstrumentStreamDest: MediaStreamAudioDestinationNode | null = null;
   public localInstrumentStream: MediaStream | null = null;
+  private micStream: MediaStream | null = null;
+  private micSourceNode: MediaStreamAudioSourceNode | null = null;
   private isRecording: boolean = false;
   private recorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
-  private extHasBeenSet: boolean = false;
+
 
   public async init() {
     if (this.audioContextStarted) return;
@@ -59,12 +60,10 @@ class ToneManager {
     }
   }
 
-  public async loadInstrument(instrumentName: string): Promise<Tone.Sampler | null> {
+  public async loadAllInstruments(): Promise<boolean> {
     if (!this.audioContextStarted) await this.init();
-    if (this.instruments.has(instrumentName)) {
-      return this.instruments.get(instrumentName)!;
-    }
-    console.log(`Loading instrument: ${instrumentName}...`);
+    
+    console.log("Loading all instruments...");
     try {
       await loadSampleLibraryScript();
 
@@ -72,23 +71,30 @@ class ToneManager {
         window.SampleLibrary.setExt('.mp3');
         this.extHasBeenSet = true;
       }
+
+      // availableInstruments配列のすべての楽器をロード
+      const loadPromises = availableInstruments.map(instrumentName => {
+        if (this.instruments.has(instrumentName)) return Promise.resolve();
+
+        const sampler = window.SampleLibrary.load({
+          instruments: instrumentName,
+          baseUrl: "/samples/"
+        }) as Tone.Sampler;
+        
+        if (this.localInstrumentStreamDest) sampler.connect(this.localInstrumentStreamDest);
+        sampler.toDestination();
+        
+        this.instruments.set(instrumentName, sampler);
+      });
+
+      await Promise.all(loadPromises); // 全てのload呼び出しを待つ
+      await Tone.loaded(); // 全ての音声ファイルのダウンロード完了を待つ
       
-      const sampler = window.SampleLibrary.load({
-        instruments: instrumentName,
-        baseUrl: "/samples/"
-      }) as Tone.Sampler;
-      
-      await Tone.loaded();
-      
-      if (this.localInstrumentStreamDest) sampler.connect(this.localInstrumentStreamDest);
-      sampler.toDestination();
-      
-      this.instruments.set(instrumentName, sampler);
-      console.log(`Instrument ${instrumentName} loaded.`);
-      return sampler;
+      console.log("All instruments loaded.");
+      return true;
     } catch (error) {
-      console.error(`Failed to load instrument ${instrumentName}:`, error);
-      return null;
+      console.error("Failed to load all instruments:", error);
+      return false;
     }
   }
   
