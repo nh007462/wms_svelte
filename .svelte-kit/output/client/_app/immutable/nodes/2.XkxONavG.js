@@ -1,0 +1,1 @@
+import"../chunks/DsnmJJEf.js";import"../chunks/69_IOA4Y.js";import{f as e,a as r}from"../chunks/CoKYETho.js";var a=e('<h1 class="text-3xl font-bold underline">Hello svelte!</h1>');function m(o){var t=a();r(o,t)}export{m as component};

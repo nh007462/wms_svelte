@@ -1,0 +1,1 @@
+export { default as component } from "../../../../src/routes/session/[roomId]/+page.svelte";
