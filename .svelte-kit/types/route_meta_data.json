@@ -1,0 +1,9 @@
+{
+	"/": [],
+	"/practice": [],
+	"/rooms": [],
+	"/session/[roomId]": [],
+	"/ws": [
+		"src/routes/ws/+server.ts"
+	]
+}

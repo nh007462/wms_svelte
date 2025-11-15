@@ -1,10 +1,8 @@
 // server.js
-// SvelteKitのビルド結果（ハンドラ）をインポート
-import { handler } from './build/handler.js';
+import { handler } from './build/handler.js'; // SvelteKitのビルド結果
 import express from 'express';
 import { createServer } from 'http';
-// シグナリングサーバーのロジックをインポート
-import { setupWebSocket } from './src/lib/server/signaling.js';
+import { setupWebSocket } from './src/lib/server/signaling.js'; // シグナリングサーバー
 
 const app = express();
 const server = createServer(app);
@@ -18,5 +16,5 @@ setupWebSocket(server);
 app.use(handler);
 
 server.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
+  console.log(`Production server with WebSocket listening on http://localhost:${port}`);
 });

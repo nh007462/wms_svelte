@@ -9,6 +9,7 @@ export default defineConfig({
     	sveltekit(),
 		{
 			name: 'webSocketServer-dev',
+			apply: 'serve', 
 			configureServer(server) {
 				if (server.httpServer) {
 					setupWebSocket(server.httpServer);
