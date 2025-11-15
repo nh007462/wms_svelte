@@ -8,7 +8,7 @@ export default defineConfig({
 		tailwindcss(),
     	sveltekit(),
 		{
-			name: 'webSocketServer',
+			name: 'webSocketServer-dev',
 			configureServer(server) {
 				if (server.httpServer) {
 					setupWebSocket(server.httpServer);
