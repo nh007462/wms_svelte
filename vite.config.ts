@@ -1,7 +1,7 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
-import { setupWebSocket } from './src/lib/server/signaling.js';
+import { setupWebSocket } from './src/lib/server/signaling';
 
 export default defineConfig({
 	plugins: [
