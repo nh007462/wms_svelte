@@ -3,6 +3,7 @@
 	"/practice": [],
 	"/rooms": [],
 	"/session/[roomId]": [],
+	"/test": [],
 	"/ws": [
 		"src/routes/ws/+server.ts"
 	]

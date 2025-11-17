@@ -28,9 +28,6 @@
 declare module '$env/static/private' {
 	export const ALLUSERSPROFILE: string;
 	export const APPDATA: string;
-	export const ATERNITY_AGENT_HOME: string;
-	export const BPPDOMAIN_MANAGER_ASM: string;
-	export const BPPDOMAIN_MANAGER_TYPE: string;
 	export const COLOR: string;
 	export const CommonProgramFiles: string;
 	export const CommonProgramW6432: string;
@@ -38,13 +35,11 @@ declare module '$env/static/private' {
 	export const ComSpec: string;
 	export const DriverData: string;
 	export const EDITOR: string;
-	export const EFC_2268_1262719628: string;
-	export const EFC_2268_1592913036: string;
-	export const EFC_2268_2283032206: string;
-	export const EFC_2268_2775293581: string;
-	export const EFC_2268_3789132940: string;
-	export const FPS_BROWSER_APP_PROFILE_STRING: string;
-	export const FPS_BROWSER_USER_PROFILE_STRING: string;
+	export const EFC_4908_1262719628: string;
+	export const EFC_4908_1592913036: string;
+	export const EFC_4908_2283032206: string;
+	export const EFC_4908_2775293581: string;
+	export const EFC_4908_3789132940: string;
 	export const HOME: string;
 	export const HOMEDRIVE: string;
 	export const HOMEPATH: string;
@@ -77,10 +72,8 @@ declare module '$env/static/private' {
 	export const npm_package_version: string;
 	export const NPM_PREFIX_JS: string;
 	export const NPM_PREFIX_NPM_CLI_JS: string;
-	export const NSPR_NATIVE_THREADS_ONLY: string;
 	export const NUMBER_OF_PROCESSORS: string;
 	export const OneDrive: string;
-	export const OneDriveCommercial: string;
 	export const OS: string;
 	export const Path: string;
 	export const PATHEXT: string;
@@ -95,7 +88,6 @@ declare module '$env/static/private' {
 	export const PSModulePath: string;
 	export const PUBLIC: string;
 	export const SESSIONNAME: string;
-	export const STEELCENTRAL_ATERNITY_AGENT_HOME: string;
 	export const SystemDrive: string;
 	export const SystemRoot: string;
 	export const TEMP: string;
@@ -105,7 +97,7 @@ declare module '$env/static/private' {
 	export const USERNAME: string;
 	export const USERPROFILE: string;
 	export const windir: string;
-	export const __PSLockDownPolicy: string;
+	export const ZES_ENABLE_SYSMAN: string;
 }
 
 /**
@@ -137,9 +129,6 @@ declare module '$env/dynamic/private' {
 	export const env: {
 		ALLUSERSPROFILE: string;
 		APPDATA: string;
-		ATERNITY_AGENT_HOME: string;
-		BPPDOMAIN_MANAGER_ASM: string;
-		BPPDOMAIN_MANAGER_TYPE: string;
 		COLOR: string;
 		CommonProgramFiles: string;
 		CommonProgramW6432: string;
@@ -147,13 +136,11 @@ declare module '$env/dynamic/private' {
 		ComSpec: string;
 		DriverData: string;
 		EDITOR: string;
-		EFC_2268_1262719628: string;
-		EFC_2268_1592913036: string;
-		EFC_2268_2283032206: string;
-		EFC_2268_2775293581: string;
-		EFC_2268_3789132940: string;
-		FPS_BROWSER_APP_PROFILE_STRING: string;
-		FPS_BROWSER_USER_PROFILE_STRING: string;
+		EFC_4908_1262719628: string;
+		EFC_4908_1592913036: string;
+		EFC_4908_2283032206: string;
+		EFC_4908_2775293581: string;
+		EFC_4908_3789132940: string;
 		HOME: string;
 		HOMEDRIVE: string;
 		HOMEPATH: string;
@@ -186,10 +173,8 @@ declare module '$env/dynamic/private' {
 		npm_package_version: string;
 		NPM_PREFIX_JS: string;
 		NPM_PREFIX_NPM_CLI_JS: string;
-		NSPR_NATIVE_THREADS_ONLY: string;
 		NUMBER_OF_PROCESSORS: string;
 		OneDrive: string;
-		OneDriveCommercial: string;
 		OS: string;
 		Path: string;
 		PATHEXT: string;
@@ -204,7 +189,6 @@ declare module '$env/dynamic/private' {
 		PSModulePath: string;
 		PUBLIC: string;
 		SESSIONNAME: string;
-		STEELCENTRAL_ATERNITY_AGENT_HOME: string;
 		SystemDrive: string;
 		SystemRoot: string;
 		TEMP: string;
@@ -214,7 +198,7 @@ declare module '$env/dynamic/private' {
 		USERNAME: string;
 		USERPROFILE: string;
 		windir: string;
-		__PSLockDownPolicy: string;
+		ZES_ENABLE_SYSMAN: string;
 		[key: `PUBLIC_${string}`]: undefined;
 		[key: `${string}`]: string | undefined;
 	}
