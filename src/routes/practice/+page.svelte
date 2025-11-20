@@ -13,16 +13,18 @@
 	import Keyboard from '../../components/Keyboard.svelte';
 	import InstrumentSelector from '../../components/InstrumentSelector.svelte';
 	import Loading from '../../components/Loading.svelte';
+	import RecordingControl from '../../components/RecordingControl.svelte';
+	import MicControl from '../../components/MicControl.svelte';
 
 	// 最初のクリック/タップでオーディオ初期化
 	async function handleInitAudio() {
 		await initializeAndLoadAll();
 	}
 
-	function onNoteDown(event: CustomEvent<string>) {
+	function onNoteDown(event: CustomEvent<{ note: string; velocity: number }>) {
 		if (!$isAudioReady) return;
 		// 練習モード: isMultiplayer = false
-		handleNoteDown(event.detail, false);
+		handleNoteDown(event.detail.note, false, event.detail.velocity);
 	}
 
 	function onNoteUp(event: CustomEvent<string>) {
@@ -56,11 +58,17 @@
 		{:else if $isLoading}
 			<Loading />
 		{:else}
-			<div class="mb-4 flex justify-center">
-				<InstrumentSelector
-					bind:value={$selectedInstrument}
-					instrumentList={availableInstruments}
-				/>
+			<div class="flex items-center justify-center md:justify-between mb-4 flex-wrap gap-4">
+				<div class="text-gray-500">
+					<InstrumentSelector
+						bind:value={$selectedInstrument}
+						instrumentList={availableInstruments}
+					/>
+				</div>
+				<div class="flex items-center gap-4">
+					<MicControl />
+					<RecordingControl />
+				</div>
 			</div>
 
 			<Keyboard on:noteDown={onNoteDown} on:noteUp={onNoteUp} />

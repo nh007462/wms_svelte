@@ -1,37 +1,38 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { toneManager } from '$lib/client/toneManager.js';
 	import { updateLocalStream } from '$lib/client/webRTCHandler.js';
 
 	let isMicOn = false;
-	let localStream: MediaStream | null = null;
 	let errorMsg = '';
 
 	async function toggleMic() {
-		if (isMicOn) {
-			// マイクをオフにする
-			if (localStream) {
-				localStream.getTracks().forEach((track) => track.stop());
-				localStream = null;
+		try {
+			if (isMicOn) {
+				// Turn off
+				await toneManager.toggleMic(false);
+				updateLocalStream(null);
+				isMicOn = false;
+			} else {
+				// Turn on
+				const stream = await toneManager.toggleMic(true);
+				if (stream) {
+					updateLocalStream(stream);
+					isMicOn = true;
+					errorMsg = '';
+				} else {
+					errorMsg = 'マイクの起動に失敗しました';
+				}
 			}
-			updateLocalStream(null);
-			isMicOn = false;
-		} else {
-			// マイクをオンにする
-			try {
-				localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-				updateLocalStream(localStream);
-				isMicOn = true;
-				errorMsg = '';
-			} catch (err) {
-				console.error('マイクへのアクセスに失敗しました:', err);
-				errorMsg = 'マイクへのアクセスが拒否されました';
-			}
+		} catch (err) {
+			console.error('マイクの切り替えエラー:', err);
+			errorMsg = 'エラーが発生しました';
 		}
 	}
 
 	onDestroy(() => {
-		if (localStream) {
-			localStream.getTracks().forEach((track) => track.stop());
+		if (isMicOn) {
+			toneManager.toggleMic(false);
 		}
 	});
 </script>

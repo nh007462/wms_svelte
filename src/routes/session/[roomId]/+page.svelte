@@ -31,7 +31,7 @@
 	import Loading from '../../../components/Loading.svelte';
 	import NicknameModal from '../../../components/NicknameModal.svelte';
 	import MicControl from '../../../components/MicControl.svelte';
-	// import RecordingControl from '$components/RecordingControl.svelte';
+	import RecordingControl from '../../../components/RecordingControl.svelte';
 	// import Participants from '$components/Participants.svelte';
 
 	const roomId = $page.params.roomId;
@@ -169,12 +169,12 @@
 						</div>
 						<div class="flex items-center gap-4">
 							<MicControl />
-							<div class="text-gray-500">(録音)</div>
+							<RecordingControl />
 						</div>
 					</div>
 
 					<Keyboard
-						on:noteDown={(e) => audioHandleNoteDown(e.detail, true)}
+						on:noteDown={(e) => audioHandleNoteDown(e.detail.note, true, e.detail.velocity)}
 						on:noteUp={(e) => audioHandleNoteUp(e.detail, true)}
 					/>
 				</div>

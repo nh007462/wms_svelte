@@ -1,6 +1,7 @@
 // src/lib/client/webRTCHandler.ts
-import { writable, type Writable } from 'svelte/store';
+import { writable, type Writable, get } from 'svelte/store';
 import { toneManager } from './toneManager.js';
+import * as Tone from 'tone';
 
 // --- ストア定義 ---
 export const participants: Writable<Participant[]> = writable([]);
@@ -88,11 +89,9 @@ function createPeerConnection(
 	pc.ontrack = (event: RTCTrackEvent) => {
 		const peer = peers.get(peerId);
 		if (peer) {
-			peer.remoteStream = event.streams[0];
-			remoteStreams.update((streams) => [
-				...streams.filter((s) => s.id !== event.streams[0].id),
-				event.streams[0]
-			]);
+			const stream = event.streams[0] || new MediaStream([event.track]);
+			peer.remoteStream = stream;
+			remoteStreams.update((streams) => [...streams.filter((s) => s.id !== stream.id), stream]);
 		}
 	};
 	pc.oniceconnectionstatechange = () => {
@@ -100,8 +99,14 @@ function createPeerConnection(
 			handleUserLeft(peerId);
 	};
 
-	if (currentLocalStream)
-		currentLocalStream.getTracks().forEach((track) => pc.addTrack(track, currentLocalStream!));
+	// Always add an audio transceiver to allow seamless mic toggling
+	const audioTransceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+	if (currentLocalStream) {
+		const audioTrack = currentLocalStream.getAudioTracks()[0];
+		if (audioTrack) {
+			audioTransceiver.sender.replaceTrack(audioTrack);
+		}
+	}
 
 	const setupDataChannel = (dc: RTCDataChannel) => {
 		dc.onopen = () => isConnected.set(true);
@@ -118,7 +123,17 @@ function createPeerConnection(
 				const data = JSON.parse(event.data) as DataChannelMessage;
 				switch (data.type) {
 					case 'noteOn':
-						toneManager.noteOn(data.instrument, data.note);
+						// If we are receiving an audio stream from this peer, do NOT play the note locally
+						// to avoid double audio (one from stream, one from local synth).
+						// However, we might want to update UI? Currently UI is not updated for remote notes.
+						// So we just check if we have a remote stream.
+						{
+							const peer = peers.get(peerId);
+							const hasAudioStream = peer?.remoteStream?.getAudioTracks().length ?? 0 > 0;
+							if (!hasAudioStream) {
+								toneManager.noteOn(data.instrument, data.note);
+							}
+						}
 						break;
 					case 'noteOff':
 						toneManager.noteOff(data.instrument, data.note);
@@ -248,12 +263,39 @@ export function broadcastMessage(message: DataChannelMessage): void {
 		}
 	});
 }
+function getMixedStream(micStream: MediaStream | null): MediaStream {
+	const ctx = Tone.getContext();
+	const dest = ctx.createMediaStreamDestination();
+
+	// 1. Instrument Stream (Local only)
+	// Use the dedicated local stream destination that only has local instruments connected
+	const instStream = toneManager.localInstrumentStream;
+	if (instStream && instStream.getAudioTracks().length > 0) {
+		ctx.createMediaStreamSource(instStream).connect(dest);
+	}
+
+	// 2. Mic Stream
+	if (micStream && micStream.getAudioTracks().length > 0) {
+		ctx.createMediaStreamSource(micStream).connect(dest);
+	}
+
+	return dest.stream;
+}
+
 export function updateLocalStream(stream: MediaStream | null): void {
 	currentLocalStream = stream;
+
+	// Create a mixed stream (Mic + Instrument)
+	const mixedStream = getMixedStream(stream);
+
 	peers.forEach((peer) => {
-		const senders = peer.pc.getSenders().filter((s) => s.track?.kind === 'audio');
-		senders.forEach((sender) => peer.pc.removeTrack(sender));
-		if (stream) stream.getAudioTracks().forEach((track) => peer.pc.addTrack(track, stream));
+		const transceiver = peer.pc.getTransceivers().find((t) => t.receiver.track.kind === 'audio');
+		if (transceiver && transceiver.sender) {
+			const track = mixedStream.getAudioTracks()[0];
+			transceiver.sender
+				.replaceTrack(track)
+				.catch((err) => console.error('replaceTrack failed', err));
+		}
 	});
 }
 export function disconnect(): void {
