@@ -21,37 +21,45 @@ export const selectedInstrument = writable<string>('piano');
  * ユーザーの最初の操作（クリック/タップ）で呼び出す
  */
 export async function initializeAndLoadAll() {
-  if (get(isAudioReady)) return; // 既に初期化済みなら何もしない
-  
-  try {
-    isLoading.set(true);
-    // オーディオ初期化
-    await toneManager.init();
-    isAudioReady.set(true);
-    
-    // 全楽器のロード
-    await toneManager.loadAllInstruments();
+	if (get(isAudioReady)) return; // 既に初期化済みなら何もしない
 
-  } catch (e) {
-    console.error("Failed to initialize or load instruments:", e);
-    alert("オーディオまたは楽器の初期化に失敗しました。");
-  } finally {
-    isLoading.set(false);
-  }
+	try {
+		isLoading.set(true);
+		// オーディオ初期化
+		await toneManager.init();
+		isAudioReady.set(true);
+
+		// 全楽器のロード
+		await toneManager.loadAllInstruments();
+	} catch (e) {
+		console.error('Failed to initialize or load instruments:', e);
+		alert('オーディオまたは楽器の初期化に失敗しました。');
+	} finally {
+		isLoading.set(false);
+	}
+}
+
+/**
+ * 音量を設定する
+ * @param db デシベル値 (例: 0, -10, -20)
+ */
+export function setVolume(db: number) {
+	toneManager.setVolume(db);
 }
 
 /**
  * 鍵盤が押された時の共通処理
  * @param note 押された音名
  * @param isMultiplayer マルチプレイヤーモードか
+ * @param velocity ベロシティ (0-1)
  */
-export function handleNoteDown(note: string, isMultiplayer: boolean) {
-  const instrumentName = get(selectedInstrument);
-  toneManager.noteOn(instrumentName, note);
-  
-  if (isMultiplayer) {
-    broadcastMessage({ type: 'noteOn', note, instrument: instrumentName });
-  }
+export function handleNoteDown(note: string, isMultiplayer: boolean, velocity: number = 1) {
+	const instrumentName = get(selectedInstrument);
+	toneManager.noteOn(instrumentName, note, velocity);
+
+	if (isMultiplayer) {
+		broadcastMessage({ type: 'noteOn', note, instrument: instrumentName });
+	}
 }
 
 /**
@@ -60,12 +68,12 @@ export function handleNoteDown(note: string, isMultiplayer: boolean) {
  * @param isMultiplayer マルチプレイヤーモードか
  */
 export function handleNoteUp(note: string, isMultiplayer: boolean) {
-  const instrumentName = get(selectedInstrument);
-  toneManager.noteOff(instrumentName, note);
-  
-  if (isMultiplayer) {
-    broadcastMessage({ type: 'noteOff', note, instrument: instrumentName });
-  }
+	const instrumentName = get(selectedInstrument);
+	toneManager.noteOff(instrumentName, note);
+
+	if (isMultiplayer) {
+		broadcastMessage({ type: 'noteOff', note, instrument: instrumentName });
+	}
 }
 
 /**
@@ -74,8 +82,8 @@ export function handleNoteUp(note: string, isMultiplayer: boolean) {
  * @param isMultiplayer マルチプレイヤーモードか
  */
 export function handleInstrumentChange(instrumentName: string, isMultiplayer: boolean) {
-  selectedInstrument.set(instrumentName);
-  if (isMultiplayer) {
-    broadcastMessage({ type: 'instrumentChange', instrument: instrumentName });
-  }
+	selectedInstrument.set(instrumentName);
+	if (isMultiplayer) {
+		broadcastMessage({ type: 'instrumentChange', instrument: instrumentName });
+	}
 }

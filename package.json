@@ -2,7 +2,7 @@
 	"name": "wms-svelte",
 	"version": "0.0.1",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "vite dev --host",
 		"build": "vite build && npm run prepack",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -10,7 +10,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
-		"lint": "prettier --check . && eslint ."
+		"lint": "prettier --check . && eslint .",
+		"start": "tsx server.ts"
 	},
 	"files": [
 		"dist",
@@ -36,9 +37,11 @@
 		"@eslint/compat": "^1.4.0",
 		"@eslint/js": "^9.36.0",
 		"@sveltejs/adapter-auto": "^6.1.0",
+		"@sveltejs/adapter-node": "^5.4.0",
 		"@sveltejs/kit": "^2.43.2",
 		"@sveltejs/package": "^2.5.4",
 		"@sveltejs/vite-plugin-svelte": "^6.2.0",
+		"@types/express": "^5.0.5",
 		"@types/node": "^22",
 		"@types/ws": "^8.18.1",
 		"eslint": "^9.36.0",
@@ -50,6 +53,7 @@
 		"publint": "^0.3.13",
 		"svelte": "^5.39.5",
 		"svelte-check": "^4.3.2",
+		"tsx": "^4.20.6",
 		"typescript": "^5.9.2",
 		"typescript-eslint": "^8.44.1",
 		"vite": "^7.1.7"
@@ -59,6 +63,7 @@
 	],
 	"dependencies": {
 		"@tailwindcss/vite": "^4.1.14",
+		"express": "^5.1.0",
 		"tailwindcss": "^4.1.14",
 		"tone": "^15.1.22",
 		"ws": "^8.18.3"

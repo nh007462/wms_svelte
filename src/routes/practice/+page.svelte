@@ -1,54 +1,77 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  // 以前作成した toneManager をインポートします
-  import { toneManager } from '$lib/client/toneManager.js'; 
+	import { onMount, tick } from 'svelte';
+	import { availableInstruments } from '$lib/client/toneManager.js';
+	import {
+		isAudioReady,
+		isLoading,
+		selectedInstrument,
+		initializeAndLoadAll,
+		handleNoteDown,
+		handleNoteUp
+	} from '$lib/client/audioLogic.js';
 
-  let isAudioReady = false;
+	import Keyboard from '../../components/Keyboard.svelte';
+	import InstrumentSelector from '../../components/InstrumentSelector.svelte';
+	import Loading from '../../components/Loading.svelte';
+	import RecordingControl from '../../components/RecordingControl.svelte';
+	import MicControl from '../../components/MicControl.svelte';
 
-  // ユーザーがクリックした時にオーディオを開始する関数
-  async function initializeAudio() {
-    if (isAudioReady) return;
-    
-    try {
-      // toneManagerの初期化メソッドを呼び出します
-      await toneManager.init();
-      isAudioReady = true;
-      console.log("AudioContext and toneManager initialized!");
-    } catch (e) {
-      console.error("Audio initialization failed:", e);
-    }
-  }
+	// 最初のクリック/タップでオーディオ初期化
+	async function handleInitAudio() {
+		await initializeAndLoadAll();
+	}
 
-  onMount(() => {
-    // デベロッパーツールから toneManager を操作できるように、
-    // windowオブジェクトに設定します
-    (window as any).tm = toneManager;
-    
-    console.log("toneManager is ready. You can now use 'tm' in the console.");
-    console.log("Example: await tm.loadInstrument('piano')");
-    console.log("Then: tm.noteOn('piano', 'C4')");
-  });
+	function onNoteDown(event: CustomEvent<{ note: string; velocity: number }>) {
+		if (!$isAudioReady) return;
+		// 練習モード: isMultiplayer = false
+		handleNoteDown(event.detail.note, false, event.detail.velocity);
+	}
+
+	function onNoteUp(event: CustomEvent<string>) {
+		if (!$isAudioReady) return;
+		handleNoteUp(event.detail, false);
+	}
 </script>
 
-<main class="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-  <div 
-    class="text-center p-8 border border-dashed border-gray-600 rounded-lg cursor-pointer"
-    on:click={initializeAudio}
-  >
-    <h1 class="text-3xl font-bold">WebRTC Music Session (Svelte)</h1>
-    
-    {#if !isAudioReady}
-      <p class="mt-4 text-lg animate-pulse">ここをクリックしてオーディオを有効にしてください</p>
-    {:else}
-      <p class="mt-4 text-lg text-green-400">オーディオは有効です ✅</p>
-    {/if}
-    
-    <p class="mt-8 text-sm text-gray-400">
-      デベロッパーツール（F12）を開き、コンソールで<br>
-      <code class="bg-gray-700 p-1 rounded">await tm.loadInstrument('piano')</code>
-      <br>と入力してピアノを読み込み、<br>
-      <code class="bg-gray-700 p-1 rounded">tm.noteOn('piano', 'C4')</code>
-      <br>で音を鳴らしてみてください。
-    </p>
-  </div>
-</main>
+<div
+	class="flex flex-col h-full"
+	on:click={handleInitAudio}
+	on:touchstart={handleInitAudio}
+	role="presentation"
+>
+	<div class="text-center p-4 bg-gray-800 rounded-lg mb-4">
+		<h2 class="text-xl font-bold text-cyan-400">一人練習モード</h2>
+	</div>
+	<div class="flex-grow flex flex-col justify-end p-4 bg-gray-800 rounded-t-lg">
+		{#if !$isAudioReady}
+			<div
+				class="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+			>
+				<button
+					class="px-6 py-3 text-xl font-semibold text-white bg-cyan-600 rounded-lg shadow hover:bg-cyan-500 transition-all"
+					on:click|stopPropagation={handleInitAudio}
+					on:touchstart|stopPropagation={handleInitAudio}
+				>
+					🎹 タップして開始
+				</button>
+			</div>
+		{:else if $isLoading}
+			<Loading />
+		{:else}
+			<div class="flex items-center justify-center md:justify-between mb-4 flex-wrap gap-4">
+				<div class="text-gray-500">
+					<InstrumentSelector
+						bind:value={$selectedInstrument}
+						instrumentList={availableInstruments}
+					/>
+				</div>
+				<div class="flex items-center gap-4">
+					<MicControl />
+					<RecordingControl />
+				</div>
+			</div>
+
+			<Keyboard on:noteDown={onNoteDown} on:noteUp={onNoteUp} />
+		{/if}
+	</div>
+</div>
