@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
+	// ルームごとの人数を保持する型
 	interface RoomCounts {
 		[key: string]: { count: number };
 	}
@@ -11,23 +12,28 @@
 	const rooms = Array.from({ length: roomCount }, (_, i) => i + 1);
 	const MAX_USERS_PER_ROOM = 5;
 
+	// サーバーからルーム人数を取得
 	async function fetchRoomCounts() {
 		try {
-			const res = await fetch('/api/rooms');
+			const res = await fetch('/rooms');
 			if (res.ok) {
 				roomCounts = await res.json();
+			} else {
+				console.error('Failed to fetch room counts:', res.status);
 			}
 		} catch (err) {
 			console.error('Failed to fetch room counts:', err);
 		}
 	}
 
+	// マウント時に初回読み込み & 定期更新
 	onMount(() => {
 		fetchRoomCounts();
 		const interval = setInterval(fetchRoomCounts, 5000);
 		return () => clearInterval(interval);
 	});
 
+	// ルーム選択時の処理
 	function handleRoomClick(roomId: number) {
 		const count = roomCounts[roomId]?.count || 0;
 		if (count >= MAX_USERS_PER_ROOM) {
@@ -75,4 +81,3 @@
 		{/each}
 	</div>
 </div>
-

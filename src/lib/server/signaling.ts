@@ -1,7 +1,55 @@
 // src/lib/server/signaling.ts
+// import { WebSocketServer, WebSocket } from 'ws';
+// import type { IncomingMessage } from 'http';
+// import type { Duplex } from 'stream';
+
+// interface UpgradeableServer {
+// 	on(
+// 		event: 'upgrade',
+// 		listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void
+// 	): this;
+// }
+
+// interface CustomWebSocket extends WebSocket {
+// 	id: string;
+// 	roomId?: string;
+// 	nickname?: string;
+// }
+// interface Room {
+// 	[socketId: string]: {
+// 		ws: CustomWebSocket;
+// 		nickname: string;
+// 		instrument: string;
+// 	};
+// }
+// const rooms: { [roomId: string]: Room } = {};
+// const MAX_USERS_PER_ROOM = 5;
+
+// src/lib/server/signaling.ts
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
+
+/* 🔧 ここから追加：グローバルスコープに rooms を保持（HMR対応） */
+export interface RoomUser {
+	ws: WebSocket;
+	nickname: string;
+	instrument: string;
+}
+
+const globalForRooms = globalThis as unknown as {
+	rooms?: Record<string, Record<string, RoomUser>>;
+};
+
+if (!globalForRooms.rooms) {
+	globalForRooms.rooms = {};
+}
+
+export const rooms = globalForRooms.rooms;
+/* 🔧 ここまで追加 */
+
+/* ✅ 以下は既存のコードを残してOK */
+const MAX_USERS_PER_ROOM = 5;
 
 interface UpgradeableServer {
 	on(
@@ -16,15 +64,6 @@ interface CustomWebSocket extends WebSocket {
 	nickname?: string;
 }
 
-interface Room {
-	[socketId: string]: {
-		ws: CustomWebSocket;
-		nickname: string;
-		instrument: string;
-	};
-}
-const rooms: { [roomId: string]: Room } = {};
-const MAX_USERS_PER_ROOM = 5;
 
 export function setupWebSocket(server: UpgradeableServer) {
 	const wss = new WebSocketServer({ noServer: true });
