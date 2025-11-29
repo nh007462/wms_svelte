@@ -56,7 +56,7 @@ class ToneManager {
 	private extHasBeenSet: boolean = false;
 	public localInstrumentStreamDest: MediaStreamAudioDestinationNode | null = null;
 	public localInstrumentStream: MediaStream | null = null;
-	private micStream: MediaStream | null = null;
+	public micStream: MediaStream | null = null;
 	private micSourceNode: MediaStreamAudioSourceNode | null = null;
 	private isRecording: boolean = false;
 	private recorder: MediaRecorder | null = null;

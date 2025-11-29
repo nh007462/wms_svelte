@@ -1,23 +1,20 @@
 // src/lib/client/webRTCHandler.ts
 import { writable, type Writable, get } from 'svelte/store';
 import { toneManager } from './toneManager.js';
-import * as Tone from 'tone';
 
-// --- ストア定義 ---
+// --- Store definitions ---
 export const participants: Writable<Participant[]> = writable([]);
 export const localId: Writable<string | null> = writable(null);
 export const localNickname: Writable<string | null> = writable(null);
 export const isConnected: Writable<boolean> = writable(false);
 export const remoteStreams: Writable<MediaStream[]> = writable([]);
 
-// --- 内部状態 ---
+// --- Internal state ---
 let ws: WebSocket | null = null;
 const peers = new Map<string, Peer>();
-let currentLocalStream: MediaStream | null = null;
-let currentMixedStream: MediaStream | null = null;
 const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-// --- 型定義 (ファイル内部) ---
+// --- Type definitions (file‑internal) ---
 interface Peer {
 	id: string;
 	nickname: string;
@@ -27,7 +24,6 @@ interface Peer {
 	remoteStream?: MediaStream;
 	candidateBuffer: RTCIceCandidateInit[];
 }
-
 export interface Participant {
 	id: string;
 	nickname: string;
@@ -42,7 +38,7 @@ type DataChannelMessage =
 	| { type: 'noteOff'; note: string | string[]; instrument: string }
 	| { type: 'instrumentChange'; instrument: string };
 
-// --- WebSocket接続 ---
+// --- WebSocket utilities ---
 function getWebSocketURL(): string {
 	if (typeof window === 'undefined') return '';
 	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -55,7 +51,7 @@ function sendMessage(type: string, payload: unknown): void {
 	}
 }
 
-// --- ユーザー退出処理 ---
+// --- User left handling ---
 function handleUserLeft(id: string): void {
 	const peer = peers.get(id);
 	if (peer) {
@@ -65,11 +61,11 @@ function handleUserLeft(id: string): void {
 		}
 		peers.delete(id);
 	}
-	participants.update((pList) => pList.filter((p) => p.id !== id));
+	participants.update((list) => list.filter((p) => p.id !== id));
 	if (peers.size === 0) isConnected.set(true);
 }
 
-// --- ピア接続の作成 ---
+// --- Peer connection creation ---
 function createPeerConnection(
 	peerId: string,
 	peerNickname: string,
@@ -81,21 +77,39 @@ function createPeerConnection(
 	const pc = new RTCPeerConnection(ICE_SERVERS);
 	peers.set(peerId, { id: peerId, nickname: peerNickname, pc, instrument, candidateBuffer: [] });
 
-	pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
-		if (event.candidate && ws)
+	// Add audio transceiver (mic if available, otherwise recvonly)
+	const micStream = toneManager.micStream;
+	const audioTrack = micStream?.getAudioTracks()[0];
+
+	pc.addTransceiver('audio', {
+		direction: 'sendrecv',
+		streams: micStream ? [micStream] : [],
+		sendEncodings: audioTrack ? [{ active: true }] : undefined
+	});
+
+	pc.onicecandidate = (event) => {
+		if (event.candidate && ws) {
 			sendMessage('signal', {
 				to: peerId,
 				signal: { type: 'candidate', candidate: event.candidate }
 			});
+		}
 	};
-	pc.ontrack = (event: RTCTrackEvent) => {
+
+	pc.ontrack = (event) => {
 		const peer = peers.get(peerId);
 		if (peer) {
 			const stream = event.streams[0] || new MediaStream([event.track]);
+			const localMixed = toneManager.localInstrumentStream;
+			if (localMixed && stream.id === localMixed.id) {
+				console.debug('Ignored loopback audio stream');
+				return;
+			}
 			peer.remoteStream = stream;
 			remoteStreams.update((streams) => [...streams.filter((s) => s.id !== stream.id), stream]);
 		}
 	};
+
 	pc.oniceconnectionstatechange = () => {
 		const state = pc.iceConnectionState;
 		console.log(`ICE Connection State for ${peerId}: ${state}`);
@@ -114,18 +128,6 @@ function createPeerConnection(
 		}
 	};
 
-	// Always add an audio transceiver to allow seamless mic toggling
-	const audioTransceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
-
-	// Use the shared mixed stream
-	if (!currentMixedStream) {
-		currentMixedStream = getMixedStream(currentLocalStream);
-	}
-	const audioTrack = currentMixedStream.getAudioTracks()[0];
-	if (audioTrack) {
-		audioTransceiver.sender.replaceTrack(audioTrack);
-	}
-
 	const setupDataChannel = (dc: RTCDataChannel) => {
 		dc.onopen = () => isConnected.set(true);
 		dc.onclose = () => {
@@ -139,29 +141,21 @@ function createPeerConnection(
 				isConnected.set(false);
 			}
 		};
-		dc.onmessage = (event: MessageEvent) => {
+		dc.onmessage = (event) => {
 			try {
 				const data = JSON.parse(event.data) as DataChannelMessage;
 				switch (data.type) {
-					case 'noteOn':
-						// If we are receiving an audio stream from this peer, do NOT play the note locally
-						// to avoid double audio (one from stream, one from local synth).
-						// However, we might want to update UI? Currently UI is not updated for remote notes.
-						// So we just check if we have a remote stream.
-						{
-							const peer = peers.get(peerId);
-							const hasAudioStream = peer?.remoteStream?.getAudioTracks().length ?? 0 > 0;
-							if (!hasAudioStream) {
-								toneManager.noteOn(data.instrument, data.note);
-							}
-						}
+					case 'noteOn': {
+						// Always play note from DataChannel as instruments are no longer mixed in audio stream
+						toneManager.noteOn(data.instrument, data.note);
 						break;
+					}
 					case 'noteOff':
 						toneManager.noteOff(data.instrument, data.note);
 						break;
 					case 'instrumentChange':
-						participants.update((pList) =>
-							pList.map((p) => (p.id === peerId ? { ...p, instrument: data.instrument } : p))
+						participants.update((list) =>
+							list.map((p) => (p.id === peerId ? { ...p, instrument: data.instrument } : p))
 						);
 						break;
 				}
@@ -177,29 +171,25 @@ function createPeerConnection(
 		const dc = pc.createDataChannel('data');
 		setupDataChannel(dc);
 	} else {
-		pc.ondatachannel = (event: RTCDataChannelEvent) => setupDataChannel(event.channel);
+		pc.ondatachannel = (event) => setupDataChannel(event.channel);
 	}
+
 	return pc;
 }
 
-// --- 再接続処理 ---
-// --- 再接続処理 ---
+// --- Reconnection handling ---
 async function restartConnection(peerId: string) {
 	const peer = peers.get(peerId);
 	if (!peer) return;
-
 	const myId = get(localId);
-	// 競合（Glare）を防ぐため、IDが小さい方のピアのみが再接続（Offer）を開始する
+	// Polite peer: smaller ID initiates restart
 	if (myId && myId > peerId) {
 		console.log(`Waiting for ${peerId} to restart connection (I am passive), sending request...`);
 		sendMessage('signal', { to: peerId, signal: { type: 'restart-request' } });
 		return;
 	}
-
 	console.log(`Restarting connection with ${peerId} (ICE Restart)...`);
-
 	try {
-		// 既存のPCを使ってICE Restartを行う（PCを作り直さない）
 		const offer = await peer.pc.createOffer({ iceRestart: true });
 		await peer.pc.setLocalDescription(offer);
 		sendMessage('signal', { to: peerId, signal: peer.pc.localDescription });
@@ -208,12 +198,11 @@ async function restartConnection(peerId: string) {
 	}
 }
 
-// --- WebSocketメッセージ受信処理 ---
+// --- WebSocket message handling ---
 async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 	try {
 		const data = JSON.parse(event.data) as WebSocketMessage;
 		const { type, payload } = data;
-
 		switch (type) {
 			case 'room-full': {
 				alert('このルームは満員です。');
@@ -227,7 +216,6 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 				if (users.length === 0) {
 					isConnected.set(true);
 				} else {
-					// P2P接続が確立しない場合のタイムアウト処理
 					setTimeout(() => {
 						if (!get(isConnected) && get(participants).length > 0) {
 							console.warn('Connection timeout: forcing isConnected to true');
@@ -235,8 +223,7 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 						}
 					}, 10000);
 				}
-
-				users.forEach((user: Participant) => {
+				users.forEach((user) => {
 					const pc = createPeerConnection(user.id, user.nickname, user.instrument, true);
 					pc.createOffer()
 						.then((offer) => pc.setLocalDescription(offer))
@@ -245,30 +232,34 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 				break;
 			}
 			case 'user-joined': {
-				const userJoinedPayload = payload as Participant;
-				participants.update((pList) => [...pList, userJoinedPayload]);
+				const newUser = payload as Participant;
+				participants.update((list) => [...list, newUser]);
 				break;
 			}
 			case 'signal': {
 				const { from, fromNickname, signal } = payload as {
 					from: string;
 					fromNickname: string;
-					signal: RTCSessionDescriptionInit | { type: 'candidate'; candidate: RTCIceCandidateInit };
+					signal:
+						| RTCSessionDescriptionInit
+						| { type: 'candidate'; candidate: RTCIceCandidateInit }
+						| { type: 'restart-request' };
 				};
 				let pc = peers.get(from)?.pc;
 				const peer = peers.get(from);
-
-				// Handle restart request
-				if ('type' in signal && signal.type === 'restart-request') {
+				// Restart request handling
+				if (
+					typeof signal === 'object' &&
+					'type' in signal &&
+					(signal as any).type === 'restart-request'
+				) {
 					console.log(`Received restart request from ${from}`);
 					restartConnection(from);
-					return;
+					break;
 				}
-
 				if (signal.type === 'offer') {
 					if (!pc) {
 						pc = createPeerConnection(from, fromNickname, 'piano', false);
-						// Re-fetch peer after creation
 					}
 					await pc.setRemoteDescription(
 						new RTCSessionDescription(signal as RTCSessionDescriptionInit)
@@ -276,36 +267,31 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 					const answer = await pc.createAnswer();
 					await pc.setLocalDescription(answer);
 					sendMessage('signal', { to: from, signal: pc.localDescription });
-
 					// Process buffered candidates
-					if (peers.get(from)?.candidateBuffer) {
-						const buffer = peers.get(from)!.candidateBuffer;
-						for (const candidate of buffer) {
-							await pc.addIceCandidate(new RTCIceCandidate(candidate));
+					if (peer?.candidateBuffer?.length) {
+						for (const cand of peer.candidateBuffer) {
+							await pc.addIceCandidate(new RTCIceCandidate(cand));
 						}
-						peers.get(from)!.candidateBuffer = [];
+						peer.candidateBuffer = [];
 					}
 				} else if (signal.type === 'answer') {
 					if (pc) {
 						await pc.setRemoteDescription(
 							new RTCSessionDescription(signal as RTCSessionDescriptionInit)
 						);
-						// Process buffered candidates
-						if (peers.get(from)?.candidateBuffer) {
-							const buffer = peers.get(from)!.candidateBuffer;
-							for (const candidate of buffer) {
-								await pc.addIceCandidate(new RTCIceCandidate(candidate));
+						if (peer?.candidateBuffer?.length) {
+							for (const cand of peer.candidateBuffer) {
+								await pc.addIceCandidate(new RTCIceCandidate(cand));
 							}
-							peers.get(from)!.candidateBuffer = [];
+							peer.candidateBuffer = [];
 						}
 					}
 				} else if (signal.type === 'candidate') {
-					const candidateSignal = signal as { type: 'candidate'; candidate: RTCIceCandidateInit };
+					const cand = (signal as { type: 'candidate'; candidate: RTCIceCandidateInit }).candidate;
 					if (pc && pc.remoteDescription) {
-						await pc.addIceCandidate(new RTCIceCandidate(candidateSignal.candidate));
+						await pc.addIceCandidate(new RTCIceCandidate(cand));
 					} else if (peer) {
-						console.log(`Buffering candidate for ${from}`);
-						peer.candidateBuffer.push(candidateSignal.candidate);
+						peer.candidateBuffer.push(cand);
 					}
 				}
 				break;
@@ -320,21 +306,23 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 	}
 }
 
-// --- 公開する関数 ---
-export function connectAndJoin(
+// --- Public API ---
+export async function connectAndJoin(
 	roomId: string,
 	nickname: string,
 	instrument: string = 'piano'
-): void {
+): Promise<void> {
 	if (ws && ws.readyState === WebSocket.OPEN) return;
+	// Ensure ToneManager is ready before any peer connections are made
+	await toneManager.init();
 	localNickname.set(nickname);
 	ws = new WebSocket(getWebSocketURL());
 	ws.onopen = () => sendMessage('join-room', { roomId, nickname, instrument });
 	ws.onmessage = handleWebSocketMessage;
-	ws.onerror = (error) => console.error('WebSocket Error:', error);
+	ws.onerror = (err) => console.error('WebSocket Error:', err);
 	ws.onclose = () => {
 		ws = null;
-		peers.forEach((peer) => peer.pc.close());
+		peers.forEach((p) => p.pc.close());
 		peers.clear();
 		participants.set([]);
 		localId.set(null);
@@ -342,6 +330,7 @@ export function connectAndJoin(
 		remoteStreams.set([]);
 	};
 }
+
 export function broadcastMessage(message: DataChannelMessage): void {
 	peers.forEach((peer) => {
 		if (peer.dataChannel && peer.dataChannel.readyState === 'open') {
@@ -353,41 +342,25 @@ export function broadcastMessage(message: DataChannelMessage): void {
 		}
 	});
 }
-function getMixedStream(micStream: MediaStream | null): MediaStream {
-	const ctx = Tone.getContext();
-	const dest = ctx.createMediaStreamDestination();
-
-	// 1. Instrument Stream (Local only)
-	// Use the dedicated local stream destination that only has local instruments connected
-	const instStream = toneManager.localInstrumentStream;
-	if (instStream && instStream.getAudioTracks().length > 0) {
-		ctx.createMediaStreamSource(instStream).connect(dest);
-	}
-
-	// 2. Mic Stream
-	if (micStream && micStream.getAudioTracks().length > 0) {
-		ctx.createMediaStreamSource(micStream).connect(dest);
-	}
-
-	return dest.stream;
-}
 
 export function updateLocalStream(stream: MediaStream | null): void {
-	currentLocalStream = stream;
-
-	// Update the shared mixed stream
-	currentMixedStream = getMixedStream(stream);
+	const audioTrack = stream?.getAudioTracks()[0] || null;
 
 	peers.forEach((peer) => {
-		const transceiver = peer.pc.getTransceivers().find((t) => t.receiver.track.kind === 'audio');
-		if (transceiver && transceiver.sender) {
-			const track = currentMixedStream!.getAudioTracks()[0];
-			transceiver.sender
-				.replaceTrack(track)
-				.catch((err) => console.error('replaceTrack failed', err));
+		const transceivers = peer.pc.getTransceivers();
+		const audioTransceiver = transceivers.find((t) => t.receiver.track.kind === 'audio');
+
+		if (audioTransceiver && audioTransceiver.sender) {
+			audioTransceiver.sender
+				.replaceTrack(audioTrack)
+				.then(() => {
+					console.log(`Updated audio track for peer ${peer.id}.`);
+				})
+				.catch((err) => console.error(`Failed to replace track for peer ${peer.id}:`, err));
 		}
 	});
 }
+
 export function disconnect(): void {
 	if (ws) ws.close();
 }
