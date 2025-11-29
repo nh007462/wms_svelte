@@ -182,14 +182,11 @@
 		</div>
 
 		<!-- リモート音声ストリームの再生 -->
-		<div class="hidden">
+		<div class="absolute opacity-0 pointer-events-none">
 			{#each $remoteStreams as stream (stream.id)}
 				<!-- svelte-ignore a11y-media-has-caption -->
-				<audio autoplay playsinline use:srcObject={stream}></audio>
+				<audio autoplay playsinline controls use:srcObject={stream}></audio>
 			{/each}
 		</div>
-
-		
-		
 	</div>
 {/if}

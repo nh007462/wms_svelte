@@ -134,7 +134,13 @@ class ToneManager {
 		if (enabled) {
 			if (this.micStream) return this.micStream;
 			try {
-				const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+				const stream = await navigator.mediaDevices.getUserMedia({
+					audio: {
+						echoCancellation: true,
+						noiseSuppression: true,
+						autoGainControl: true
+					}
+				});
 				this.micStream = stream;
 				const audioContext = Tone.getContext();
 				this.micSourceNode = audioContext.createMediaStreamSource(stream);
