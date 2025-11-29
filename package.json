@@ -17,7 +17,7 @@
 		"mcp:start": "cd mcp-server && npm start",
 		"dev:all": "concurrently \"npm run dev\" \"npm run mcp:dev\"",
 		"build:all": "npm run build && npm run mcp:build",
-		"start:all": "concurrently \"npm run start\" \"npm run mcp:start\""
+		"start:all": "concurrently \"npm run start\" \"node -e \"setTimeout(() => process.exit(0), 5000)\" && npm run mcp:start\""
 	},
 	"files": [
 		"dist",
