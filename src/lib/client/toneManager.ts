@@ -129,6 +129,11 @@ class ToneManager {
 		if (instrument) instrument.triggerRelease(note, Tone.now() + 0.05);
 	}
 
+	public triggerAttackRelease(note: string, duration: string, instrumentName: string = 'piano') {
+		const instrument = this.instruments.get(instrumentName);
+		if (instrument) instrument.triggerAttackRelease(note, duration);
+	}
+
 	public async toggleMic(enabled: boolean): Promise<MediaStream | null> {
 		await this.init();
 		if (enabled) {

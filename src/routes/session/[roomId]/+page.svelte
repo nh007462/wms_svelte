@@ -21,7 +21,11 @@
 		remoteStreams,
 		connectAndJoin,
 		disconnect,
-		updateLocalStream
+		updateLocalStream,
+		summonAI,
+		dismissAI,
+		chatMessages,
+		sendChatMessage
 	} from '$lib/client/webRTCHandler.js';
 	import type { Participant } from '$lib/client/webRTCHandler.js';
 
@@ -37,6 +41,28 @@
 	const roomId = $page.params.roomId;
 	let nickname: string | null = null;
 	let isModalOpen = true;
+	let isChatOpen = false;
+	let isAIThinking = false;
+
+	$: isAIHere = $participants.some((p) => p.nickname === 'Gemini-AI');
+
+	// AIからの返信があったらThinkingを消す
+	$: if ($chatMessages.length > 0) {
+		const lastMsg = $chatMessages[$chatMessages.length - 1];
+		if (lastMsg.nickname === 'Gemini-AI') {
+			isAIThinking = false;
+		}
+	}
+
+	function handleToggleAI() {
+		if (!roomId) return;
+		if (isAIHere) {
+			dismissAI(roomId);
+		} else {
+			summonAI(roomId);
+			alert('AIを呼び出しました！まもなく参加します。');
+		}
+	}
 
 	onMount(() => {
 		// ★★★ デバッグ用にwindowオブジェクトに関数を登録 ★★★
@@ -69,6 +95,13 @@
 		if (typeof window !== 'undefined') localStorage.setItem('nickname', nickname);
 		isModalOpen = false;
 		await initializeAndLoadAll();
+	}
+
+	function handleCallAI() {
+		if (roomId) {
+			summonAI(roomId);
+			alert('AIを呼び出しました！まもなく参加します。');
+		}
 	}
 
 	// ★★★ オーディオの準備ができたら、WebRTC接続を開始 ★★★
@@ -130,7 +163,7 @@
 {#if !isModalOpen}
 	<div class="flex flex-col h-full">
 		<!-- 参加者リスト（仮） -->
-		<div class="mb-4 p-2">
+		<div class="mb-4 p-2 flex flex-col items-center gap-2">
 			<div class="flex justify-center items-center gap-4 flex-wrap">
 				{#if $localNickname}
 					<div class="bg-gray-800 p-3 rounded-lg border border-cyan-500">
@@ -179,6 +212,65 @@
 					/>
 				</div>
 			{/if}
+
+			<!-- Bottom Controls: Call AI & Chat Toggle -->
+			<div class="fixed bottom-4 right-4 flex flex-col gap-2 items-end z-50">
+				{#if isChatOpen}
+					<div class="w-80 bg-gray-900 rounded-lg p-4 border border-gray-700 shadow-2xl mb-2">
+						<div class="flex justify-between items-center mb-2">
+							<h3 class="text-white font-bold">Chat with AI</h3>
+							<button on:click={() => (isChatOpen = false)} class="text-gray-400 hover:text-white"
+								>✕</button
+							>
+						</div>
+						<div class="h-40 overflow-y-auto mb-2 bg-gray-800 p-2 rounded">
+							{#each $chatMessages as msg}
+								<div class="mb-1">
+									<span class="font-bold text-cyan-400">{msg.nickname}:</span>
+									<span class="text-white">{msg.message}</span>
+								</div>
+							{/each}
+						</div>
+						{#if isAIThinking}
+							<div class="text-xs text-cyan-300 animate-pulse mb-2 ml-2">AI is thinking...</div>
+						{/if}
+						<div class="flex gap-2">
+							<input
+								type="text"
+								placeholder="Type command..."
+								class="flex-1 bg-gray-700 text-white px-2 py-1 rounded border border-gray-600 focus:border-cyan-500 outline-none"
+								on:keydown={(e) => {
+									if (e.key === 'Enter') {
+										const input = e.currentTarget;
+										if (input.value.trim() && roomId) {
+											sendChatMessage(roomId, input.value.trim());
+											if (isAIHere) isAIThinking = true;
+											input.value = '';
+										}
+									}
+								}}
+							/>
+						</div>
+					</div>
+				{/if}
+
+				<div class="flex gap-2">
+					<button
+						on:click={handleToggleAI}
+						class="{isAIHere
+							? 'bg-red-600 hover:bg-red-700'
+							: 'bg-purple-600 hover:bg-purple-700'} text-white font-bold py-2 px-4 rounded-full shadow-lg transition-all transform hover:scale-105"
+					>
+						{isAIHere ? '👋 Dismiss AI' : '🤖 Call AI'}
+					</button>
+					<button
+						on:click={() => (isChatOpen = !isChatOpen)}
+						class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition-all transform hover:scale-105"
+					>
+						💬 Chat
+					</button>
+				</div>
+			</div>
 		</div>
 
 		<!-- リモート音声ストリームの再生 -->

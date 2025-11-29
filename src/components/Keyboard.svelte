@@ -297,6 +297,7 @@
 				{#if isBlack}
 					<button
 						type="button"
+						aria-label={note}
 						data-note={note}
 						on:mousedown={(e) => {
 							e.stopPropagation();

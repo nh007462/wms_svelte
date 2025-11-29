@@ -64,7 +64,6 @@ interface CustomWebSocket extends WebSocket {
 	nickname?: string;
 }
 
-
 export function setupWebSocket(server: UpgradeableServer) {
 	const wss = new WebSocketServer({ noServer: true });
 
@@ -89,6 +88,28 @@ export function setupWebSocket(server: UpgradeableServer) {
 				switch (type) {
 					case 'join-room': {
 						const { roomId, nickname, instrument = 'piano' } = payload;
+
+						// If already in a room, leave it first
+						if (ws.roomId && ws.roomId !== roomId) {
+							const oldRoomId = ws.roomId;
+							if (rooms[oldRoomId] && rooms[oldRoomId][ws.id]) {
+								delete rooms[oldRoomId][ws.id];
+								console.log(`[Room ${oldRoomId}] User left (switching rooms): ${ws.id}`);
+
+								// Broadcast user-left to old room
+								Object.values(rooms[oldRoomId]).forEach((clientData) => {
+									if (clientData.ws.readyState === WebSocket.OPEN) {
+										clientData.ws.send(
+											JSON.stringify({ type: 'user-left', payload: { id: ws.id } })
+										);
+									}
+								});
+
+								if (Object.keys(rooms[oldRoomId]).length === 0) {
+									delete rooms[oldRoomId];
+								}
+							}
+						}
 
 						if (!rooms[roomId]) rooms[roomId] = {};
 						if (Object.keys(rooms[roomId]).length >= MAX_USERS_PER_ROOM) {
@@ -155,6 +176,82 @@ export function setupWebSocket(server: UpgradeableServer) {
 									JSON.stringify({
 										type: 'data-channel-message',
 										payload: { from: ws.id, message }
+									})
+								);
+							}
+						});
+						break;
+					}
+
+					case 'summon-ai': {
+						const targetRoomId = payload.roomId;
+						console.log(`Summoning AI to room ${targetRoomId}`);
+
+						// Broadcast to ALL rooms to allow stealing the AI
+						Object.values(rooms).forEach((roomClients) => {
+							Object.values(roomClients).forEach((clientData) => {
+								if (clientData.ws.readyState === WebSocket.OPEN) {
+									clientData.ws.send(
+										JSON.stringify({
+											type: 'summon-ai',
+											payload: { roomId: targetRoomId }
+										})
+									);
+								}
+							});
+						});
+						break;
+					}
+
+					case 'dismiss-ai': {
+						const targetRoomId = payload.roomId;
+						console.log(`Dismissing AI from room ${targetRoomId}`);
+
+						// Broadcast to the room so AI (which is in the room) receives it
+						const room = rooms[targetRoomId];
+						if (room) {
+							Object.values(room).forEach((clientData) => {
+								if (clientData.ws.readyState === WebSocket.OPEN) {
+									clientData.ws.send(
+										JSON.stringify({
+											type: 'dismiss-ai',
+											payload: { roomId: targetRoomId }
+										})
+									);
+								}
+							});
+						}
+						break;
+					}
+
+					case 'chat-message': {
+						if (!rooms[roomId!]) return;
+						const { message } = payload;
+						const fromNickname = rooms[roomId!][ws.id]?.nickname || 'Unknown';
+
+						Object.entries(rooms[roomId!]).forEach(([id, clientData]) => {
+							if (clientData.ws.readyState === WebSocket.OPEN) {
+								clientData.ws.send(
+									JSON.stringify({
+										type: 'chat-message',
+										payload: { from: ws.id, nickname: fromNickname, message }
+									})
+								);
+							}
+						});
+						break;
+					}
+
+					case 'ai-play-note': {
+						if (!rooms[roomId!]) return;
+						const { note, duration, instrument } = payload;
+
+						Object.values(rooms[roomId!]).forEach((clientData) => {
+							if (clientData.ws.readyState === WebSocket.OPEN) {
+								clientData.ws.send(
+									JSON.stringify({
+										type: 'ai-play-note',
+										payload: { note, duration, instrument }
 									})
 								);
 							}

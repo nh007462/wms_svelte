@@ -9,6 +9,14 @@ export const localNickname: Writable<string | null> = writable(null);
 export const isConnected: Writable<boolean> = writable(false);
 export const remoteStreams: Writable<MediaStream[]> = writable([]);
 
+export interface ChatMessage {
+	from: string;
+	nickname: string;
+	message: string;
+	timestamp: number;
+}
+export const chatMessages = writable<ChatMessage[]>([]);
+
 // --- Internal state ---
 let ws: WebSocket | null = null;
 const peers = new Map<string, Peer>();
@@ -236,6 +244,28 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 				participants.update((list) => [...list, newUser]);
 				break;
 			}
+
+			case 'chat-message': {
+				const { from, nickname, message } = payload as {
+					from: string;
+					nickname: string;
+					message: string;
+				};
+				chatMessages.update((msgs) => [
+					...msgs,
+					{ from, nickname, message, timestamp: Date.now() }
+				]);
+				break;
+			}
+			case 'ai-play-note': {
+				const { note, duration, instrument } = payload as {
+					note: string;
+					duration: string;
+					instrument: string;
+				};
+				toneManager.triggerAttackRelease(note, duration, instrument);
+				break;
+			}
 			case 'signal': {
 				const { from, fromNickname, signal } = payload as {
 					from: string;
@@ -363,4 +393,45 @@ export function updateLocalStream(stream: MediaStream | null): void {
 
 export function disconnect(): void {
 	if (ws) ws.close();
+}
+
+export function summonAI(roomId: string): void {
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: 'summon-ai',
+				payload: { roomId }
+			})
+		);
+		console.log(`Sent summon-ai request for room ${roomId}`);
+	} else {
+		console.warn('WebSocket not connected, cannot summon AI');
+	}
+}
+
+export function dismissAI(roomId: string): void {
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: 'dismiss-ai',
+				payload: { roomId }
+			})
+		);
+		console.log(`Sent dismiss-ai request for room ${roomId}`);
+	} else {
+		console.warn('WebSocket not connected, cannot dismiss AI');
+	}
+}
+
+export function sendChatMessage(roomId: string, message: string): void {
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: 'chat-message',
+				payload: { roomId, message }
+			})
+		);
+	} else {
+		console.warn('WebSocket not connected, cannot send chat message');
+	}
 }
