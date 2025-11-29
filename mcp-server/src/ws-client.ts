@@ -9,7 +9,7 @@ export class WebSocketClient {
 	private genAI: GoogleGenerativeAI | null = null;
 	private model: any = null;
 
-	constructor(url: string = 'ws://localhost:5173/ws') {
+	constructor(url: string = process.env.WS_URL || 'ws://localhost:3000/ws') {
 		this.url = url;
 		const apiKey = process.env.GEMINI_API_KEY;
 		if (apiKey) {
