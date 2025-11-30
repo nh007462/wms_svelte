@@ -108,8 +108,10 @@
 	}
 
 	let isPointerDown = false;
-	let activeKey: string | null = null;
-	let activeChordNotes: string[] = [];
+	// タッチID (number) または 'mouse' -> ルート音名
+	let activeTouches = new Map<number | string, string>();
+	// 現在鳴っている全ての音（表示用および重複管理用）
+	let playingNotes = new Set<string>();
 
 	function getNoteIndex(note: string): number {
 		const name = note.slice(0, -1);
@@ -170,81 +172,130 @@
 		return intervals.map((interval) => getNoteFromIndex(rootIndex + interval));
 	}
 
-	function triggerNoteDown(note: string) {
-		if (activeKey !== note) {
-			if (activeKey) releaseCurrentNote(); // 前の音/和音を消す (ポインター状態は維持)
+	// 現在の activeTouches と設定に基づいて、鳴らすべき音を計算し、差分を処理する
+	function updateAudioState() {
+		const desiredNotes = new Set<string>();
+		const noteVelocities = new Map<string, number>();
 
-			activeKey = note;
+		// 1. activeTouches から鳴らすべき全ての音を収集
+		for (const rootNote of activeTouches.values()) {
+			let notes: string[] = [];
+			let velocity = 1;
 
 			if (chordMode === 'single') {
-				activeChordNotes = [note];
-				dispatch('noteDown', { note, velocity: 1 });
+				notes = [rootNote];
+				velocity = 1;
 			} else {
-				activeChordNotes = getChordNotes(note);
-				// 和音の場合はベロシティを下げる (例: 0.6)
-				const velocity = 0.6;
-				activeChordNotes.forEach((n) => {
-					dispatch('noteDown', { note: n, velocity });
-				});
+				notes = getChordNotes(rootNote);
+				velocity = 0.6;
+			}
+
+			notes.forEach((n) => {
+				desiredNotes.add(n);
+				// 同じ音が複数のソースから鳴る場合、大きい方のベロシティを採用（今回は簡易的に上書き）
+				noteVelocities.set(n, velocity);
+			});
+		}
+
+		// 2. 止めるべき音 (playingNotes にあるが desiredNotes にない)
+		for (const note of playingNotes) {
+			if (!desiredNotes.has(note)) {
+				dispatch('noteUp', note);
+				playingNotes.delete(note);
 			}
 		}
-	}
 
-	function triggerNoteUp(note: string) {
-		if (activeKey === note) {
-			activeChordNotes.forEach((n) => {
-				dispatch('noteUp', n);
-			});
-			activeKey = null;
-			activeChordNotes = [];
+		// 3. 鳴らすべき音 (desiredNotes にあるが playingNotes にない)
+		for (const note of desiredNotes) {
+			if (!playingNotes.has(note)) {
+				const velocity = noteVelocities.get(note) || 1;
+				dispatch('noteDown', { note, velocity });
+				playingNotes.add(note);
+			}
 		}
+
+		// Svelteのリアクティビティのために再代入
+		playingNotes = playingNotes;
 	}
 
-	// ポインター状態をリセットせずに音だけ止める
-	function releaseCurrentNote() {
-		if (activeKey) {
-			activeChordNotes.forEach((n) => {
-				dispatch('noteUp', n);
-			});
-			activeKey = null;
-			activeChordNotes = [];
-		}
-	}
-
-	// 全てリセット（ポインター離脱時）
-	function releaseAll() {
-		releaseCurrentNote();
-		isPointerDown = false;
-	}
-
-	function handlePointerDown(e: Event, note: string) {
+	function handleMouseDown(e: MouseEvent, note: string) {
 		if (e.cancelable) e.preventDefault();
 		isPointerDown = true;
-		triggerNoteDown(note);
+		activeTouches.set('mouse', note);
+		updateAudioState();
 	}
 
 	function handleMouseEnter(note: string) {
-		if (isPointerDown) triggerNoteDown(note);
-	}
-
-	function handleTouchMove(e: TouchEvent) {
-		if (!isPointerDown) return;
-		if (e.cancelable) e.preventDefault();
-		const touch = e.touches[0];
-		const element = document.elementFromPoint(touch.clientX, touch.clientY);
-		const note = element?.getAttribute('data-note');
-		if (note) triggerNoteDown(note);
-		else if (activeKey) {
-			releaseCurrentNote();
+		if (isPointerDown) {
+			activeTouches.set('mouse', note);
+			updateAudioState();
 		}
 	}
 
+	function handleMouseUp() {
+		isPointerDown = false;
+		activeTouches.delete('mouse');
+		updateAudioState();
+	}
+
+	function handleTouchStart(e: TouchEvent) {
+		if (e.cancelable) e.preventDefault();
+		const touches = e.changedTouches;
+		for (let i = 0; i < touches.length; i++) {
+			const touch = touches[i];
+			const element = document.elementFromPoint(touch.clientX, touch.clientY);
+			const note = element?.getAttribute('data-note');
+			if (note) {
+				activeTouches.set(touch.identifier, note);
+			}
+		}
+		updateAudioState();
+	}
+
+	function handleTouchMove(e: TouchEvent) {
+		if (e.cancelable) e.preventDefault();
+		const touches = e.changedTouches;
+		for (let i = 0; i < touches.length; i++) {
+			const touch = touches[i];
+			const element = document.elementFromPoint(touch.clientX, touch.clientY);
+			const note = element?.getAttribute('data-note');
+
+			const currentNote = activeTouches.get(touch.identifier);
+
+			if (note) {
+				if (currentNote !== note) {
+					activeTouches.set(touch.identifier, note);
+				}
+			} else {
+				// 鍵盤外に出た場合
+				if (currentNote) {
+					activeTouches.delete(touch.identifier);
+				}
+			}
+		}
+		updateAudioState();
+	}
+
+	function handleTouchEnd(e: TouchEvent) {
+		if (e.cancelable) e.preventDefault();
+		const touches = e.changedTouches;
+		for (let i = 0; i < touches.length; i++) {
+			const touch = touches[i];
+			activeTouches.delete(touch.identifier);
+		}
+		updateAudioState();
+	}
+
 	onMount(() => {
-		window.addEventListener('mouseup', releaseAll);
-		window.addEventListener('touchend', releaseAll);
+		window.addEventListener('mouseup', handleMouseUp);
+		// touchendは個別に処理するのでwindow全体のリセットは慎重に
+		// ただし、画面外で離された場合などを考慮して、touchcancel等はwindowにつけるか、
+		// あるいはコンテナにつけるか。ここではコンテナのイベントで十分カバーできるはずだが、
+		// 安全のため window で mouseup は監視。
+		// touchに関しては、multi-touchの整合性を保つため、個別のイベントハンドラで管理する。
+
 		return () => {
-			window.removeEventListener('mouseup', releaseAll);
-			window.removeEventListener('touchend', releaseAll);
+			window.removeEventListener('mouseup', handleMouseUp);
 		};
 	});
 </script>
@@ -263,7 +314,10 @@
 	<!-- 鍵盤エリア -->
 	<div
 		class="relative w-full h-40 bg-gray-900 rounded-b-lg overflow-hidden touch-none"
+		on:touchstart={handleTouchStart}
 		on:touchmove={handleTouchMove}
+		on:touchend={handleTouchEnd}
+		on:touchcancel={handleTouchEnd}
 		role="presentation"
 	>
 		<!-- 白鍵 -->
@@ -273,12 +327,11 @@
 					<button
 						type="button"
 						data-note={note}
-						on:mousedown={(e) => handlePointerDown(e, note)}
+						on:mousedown={(e) => handleMouseDown(e, note)}
 						on:mouseenter={() => handleMouseEnter(note)}
-						on:touchstart={(e) => handlePointerDown(e, note)}
 						class="relative h-full border-l border-r border-b border-gray-700 transition-colors duration-75 pointer-events-auto outline-none focus:outline-none"
-						class:bg-cyan-200={activeChordNotes.includes(note)}
-						class:bg-white={!activeChordNotes.includes(note)}
+						class:bg-cyan-200={playingNotes.has(note)}
+						class:bg-white={!playingNotes.has(note)}
 						style="flex: 1 0 calc(100% / {whiteKeyCount});"
 					>
 						<span
@@ -301,16 +354,12 @@
 						data-note={note}
 						on:mousedown={(e) => {
 							e.stopPropagation();
-							handlePointerDown(e, note);
+							handleMouseDown(e, note);
 						}}
 						on:mouseenter={() => handleMouseEnter(note)}
-						on:touchstart={(e) => {
-							e.stopPropagation();
-							handlePointerDown(e, note);
-						}}
 						class="absolute top-0 h-2/3 w-[60%] border border-gray-700 rounded-b transition-colors duration-75 pointer-events-auto outline-none focus:outline-none"
-						class:bg-cyan-500={activeChordNotes.includes(note)}
-						class:bg-black={!activeChordNotes.includes(note)}
+						class:bg-cyan-500={playingNotes.has(note)}
+						class:bg-black={!playingNotes.has(note)}
 						style="
 							left: calc(({whiteKeyIndex} + {leftOffset}) * (100% / {whiteKeyCount}));
 							transform: translateX(-50%);
