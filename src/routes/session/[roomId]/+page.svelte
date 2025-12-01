@@ -26,7 +26,8 @@
 		dismissAI,
 		chatMessages,
 		sendChatMessage,
-		lastRemoteNoteEvent
+		lastRemoteNoteEvent,
+		aiCountdown
 	} from '$lib/client/webRTCHandler.js';
 	import type { Participant } from '$lib/client/webRTCHandler.js';
 
@@ -291,5 +292,16 @@
 				<audio autoplay playsinline controls use:srcObject={stream}></audio>
 			{/each}
 		</div>
+
+		<!-- AI Countdown Overlay -->
+		{#if $aiCountdown !== null}
+			<div class="fixed inset-0 flex items-center justify-center z-[100] pointer-events-none">
+				<div
+					class="text-[15rem] font-bold text-white drop-shadow-[0_0_15px_rgba(0,0,0,0.8)] animate-bounce"
+				>
+					{$aiCountdown}
+				</div>
+			</div>
+		{/if}
 	</div>
 {/if}

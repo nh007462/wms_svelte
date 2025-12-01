@@ -281,6 +281,22 @@ export function setupWebSocket(server: UpgradeableServer) {
 						});
 						break;
 					}
+
+					case 'ai-countdown': {
+						if (!rooms[roomId!]) return;
+						// Broadcast to all clients in the room
+						Object.values(rooms[roomId!]).forEach((clientData) => {
+							if (clientData.ws.readyState === WebSocket.OPEN) {
+								clientData.ws.send(
+									JSON.stringify({
+										type: 'ai-countdown',
+										payload: {}
+									})
+								);
+							}
+						});
+						break;
+					}
 				}
 			} catch (e) {
 				console.error('Failed to process message:', e);

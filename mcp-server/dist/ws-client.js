@@ -16,7 +16,7 @@ class WebSocketClient {
     scheduledTimeouts = [];
     currentInstrument = 'piano';
     currentRoomId = null;
-    constructor(url = process.env.WS_URL || 'ws://localhost:3000/ws') {
+    constructor(url = process.env.WS_URL || 'ws://localhost:5173/ws') {
         this.url = url;
         const apiKey = process.env.GEMINI_API_KEY;
         if (apiKey) {
@@ -124,24 +124,10 @@ class WebSocketClient {
             type: 'ai-play-note',
             payload: {
                 instrument: instrument,
-                note: note,
-                duration: duration
-            }
-        });
-    }
-    sendInstrumentChange(instrument) {
-        this.send({
-            type: 'instrument-change',
-            payload: {
-                userId: 'Gemini-AI',
-                instrument: instrument
-            }
-        });
-    }
-    async handleGeminiChat(prompt) {
-        try {
-            const systemPrompt = `
-あなたはAIミュージシャンです。自然言語のリクエストや楽譜データを受けて音楽を演奏します。
+                async handleGeminiChat(prompt) {
+                    try {
+                        const systemPrompt = `
+あなたはプロのAIミュージシャンです。ユーザーのリクエストに合わせて、感情豊かで人間らしい演奏を生成してください。
 現在の楽器: ${this.currentInstrument}
 
 以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
@@ -154,131 +140,147 @@ class WebSocketClient {
 2. **コードの展開**:
    - コード名は必ず構成音に展開してください。
    - **M7, m7, 7, dim7** などの指定がある場合は、必ず **4和音（4つの音）** にしてください。省略してはいけません。
-   - 異名同音に注意してください (例: Cb = B)。"Cb" と書かれていたら Bメジャー (B, D#, F#) または Cbメジャー (Cb, Eb, Gb) の音を出してください。Bb (A#) ではありません。
-3. **時間とタイミング**:
-   - 楽譜に「秒数」や「拍数」がある場合、その値を **duration** に反映してください (例: "1.455s")。
-   - **time** は「前の和音からの待機時間」です。
-     - 1つ目の和音: time = 0
-     - 2つ目の和音: time = 1つ目の和音の長さ(ms)
-     - 3つ目の和音: time = 2つ目の和音の長さ(ms)
-   - 和音の中の構成音（2つ目以降）は、**time = 0** にして同時に鳴らしてください。
-4. **音名表記**: 必ず「科学的ピッチ表記法」 (例: C4, D#5) で指定してください。
+   - 異名同音に注意してください (例: Cb = B)。
+3. **時間とタイミング (Humanize)**:
+   - \`time\` は「前のイベントからの待機時間(ms)」です。
+   - **人間らしい演奏**にするため、和音の構成音であっても、完全に同時(\`time: 0\`)ではなく、**10ms〜30ms程度のわずかなズレ**（ストローク感）を入れてください。
+   - 楽譜通りの機械的なタイミングではなく、フレーズの区切りで少し「ため」を作るなど、グルーヴ感を出してください。
+4. **音の長さと視認性**:
+   - 画面上の鍵盤が光るのを確認できるよう、**最短でも "0.2s" (200ms) 以上** の長さを確保してください。あまりに短い音は視認できません。
+   - スタッカートの場合でも "0.2s" 程度は確保してください。
+5. **音名表記**:
+   - 必ず「科学的ピッチ表記法」 (例: C4, D#5) で指定してください。
 
 出力フォーマット:
 {
   "text": "短い返答（日本語で20文字以内）",
-  "instrument": "使用する楽器名 (省略可, デフォルトは現在の楽器)",
+  "instrument": "使用する楽器名",
   "keepInstrument": true/false,
   "notes": [
     {
       "note": "音名 (例: C4, D#5)",
-      "duration": "音価 (例: '1.455s', '2n')",
-      "time": "前のイベントからの待機時間(ms)。和音の構成音は0。"
+      "duration": "音価 (例: '0.5s', '4n')",
+      "time": "前のイベントからの待機時間(ms)。和音でも少しズラす(10-30ms)と人間らしくなります。",
+      "velocity": "ベロシティ(音の強さ)。0.0〜1.0。アクセントをつける場合は0.8〜1.0、弱拍は0.5〜0.7など。"
     }
   ]
 }
 
-例: 表データ "C (2.0s) -> G (2.0s) -> Am7 (2.0s)" の場合
+例: Cメジャーコードを人間らしく ("ジャラーン"と弾く)
 {
-  "text": "はい、演奏します。",
+  "text": "Cメジャーを弾きます。",
   "notes": [
-    // C (2.0s)
-    {"note": "C4", "duration": "2.0s", "time": 0}, {"note": "E4", "duration": "2.0s", "time": 0}, {"note": "G4", "duration": "2.0s", "time": 0},
-    // G (2.0s) - 前のCから2000ms後
-    {"note": "G3", "duration": "2.0s", "time": 2000}, {"note": "B3", "duration": "2.0s", "time": 0}, {"note": "D4", "duration": "2.0s", "time": 0},
-    // Am7 (2.0s) - 前のGから2000ms後. 7thを含む4和音
-    {"note": "A3", "duration": "2.0s", "time": 2000}, {"note": "C4", "duration": "2.0s", "time": 0}, {"note": "E4", "duration": "2.0s", "time": 0}, {"note": "G4", "duration": "2.0s", "time": 0}
+    {"note": "C4", "duration": "2.0s", "time": 0, "velocity": 0.9},
+    {"note": "E4", "duration": "2.0s", "time": 20, "velocity": 0.8}, // 20ms遅らせる
+    {"note": "G4", "duration": "2.0s", "time": 20, "velocity": 0.85} // さらに20ms遅らせる
   ]
 }
 
 リクエスト: ${JSON.stringify(prompt)}
 `;
-            const result = await this.model.generateContent(systemPrompt);
-            const response = await result.response;
-            let text = response.text();
-            // Clean up markdown code blocks if present
-            text = text.replace(/```json\n?/g, '').replace(/```/g, '');
-            // Extract JSON
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const jsonStr = jsonMatch[0];
-                try {
-                    const data = JSON.parse(jsonStr);
-                    // Handle instrument logic
-                    let playInstrument = this.currentInstrument;
-                    let shouldRevert = false;
-                    const previousInstrument = this.currentInstrument;
-                    if (data.instrument && data.instrument !== this.currentInstrument) {
-                        playInstrument = data.instrument;
-                        if (data.keepInstrument) {
-                            this.currentInstrument = data.instrument;
-                            this.sendInstrumentChange(this.currentInstrument);
+                        const result = await this.model.generateContent(systemPrompt);
+                        const response = await result.response;
+                        let text = response.text();
+                        // Clean up markdown code blocks if present
+                        text = text.replace(/```json\n?/g, '').replace(/```/g, '');
+                        // Extract JSON
+                        const jsonMatch = text.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            const jsonStr = jsonMatch[0];
+                            try {
+                                const data = JSON.parse(jsonStr);
+                                // Handle instrument logic
+                                let playInstrument = this.currentInstrument;
+                                let shouldRevert = false;
+                                const previousInstrument = this.currentInstrument;
+                                if (data.instrument && data.instrument !== this.currentInstrument) {
+                                    playInstrument = data.instrument;
+                                    if (data.keepInstrument) {
+                                        this.currentInstrument = data.instrument;
+                                        this.sendInstrumentChange(this.currentInstrument);
+                                    }
+                                    else {
+                                        shouldRevert = true;
+                                        this.sendInstrumentChange(playInstrument);
+                                    }
+                                }
+                                // Send chat response
+                                if (data.text) {
+                                    this.send({
+                                        type: 'chat-message',
+                                        payload: {
+                                            message: data.text,
+                                            from: 'Gemini-AI'
+                                        }
+                                    });
+                                }
+                                // Play notes
+                                if (data.notes && Array.isArray(data.notes)) {
+                                    console.log('Gemini generated notes:', data.notes);
+                                    // Send countdown signal
+                                    this.send({
+                                        type: 'ai-countdown',
+                                        payload: { roomId: this.currentRoomId }
+                                    });
+                                    let currentTime = 4000; // Delay for countdown (3, 2, 1, GO)
+                                    let maxEndTime = 4000;
+                                    for (const n of data.notes) {
+                                        const t = setTimeout(() => {
+                                            this.playNote(n.note, n.duration, playInstrument);
+                                        }, currentTime + (n.time || 0));
+                                        this.scheduledTimeouts.push(t);
+                                        currentTime += n.time || 0;
+                                        // Estimate duration in ms (rough approximation for '4n' etc if needed, but assuming s/ms for now or standard Tone.js)
+                                        // For simplicity in server-side timeout, we might need a helper or just assume a safe buffer.
+                                        // Since we don't have Tone.js here, we rely on the fact that 'time' is in ms.
+                                        // Duration is tricky. Let's assume a minimum or try to parse 's'.
+                                        let durationMs = 500; // default
+                                        if (n.duration.endsWith('s')) {
+                                            durationMs = parseFloat(n.duration) * 1000;
+                                        }
+                                        else if (n.duration === '4n')
+                                            durationMs = 500;
+                                        else if (n.duration === '2n')
+                                            durationMs = 1000;
+                                        else if (n.duration === '1n')
+                                            durationMs = 2000;
+                                        else if (n.duration === '8n')
+                                            durationMs = 250;
+                                        maxEndTime = Math.max(maxEndTime, currentTime + durationMs);
+                                    }
+                                    // Revert instrument if needed
+                                    if (shouldRevert) {
+                                        const t = setTimeout(() => {
+                                            this.sendInstrumentChange(previousInstrument);
+                                            console.log(`Reverting instrument to ${previousInstrument}`);
+                                        }, maxEndTime + 500); // Add buffer
+                                        this.scheduledTimeouts.push(t);
+                                    }
+                                }
+                            }
+                            catch (e) {
+                                console.error('Failed to parse extracted JSON:', jsonStr, e);
+                            }
                         }
                         else {
-                            shouldRevert = true;
-                            this.sendInstrumentChange(playInstrument);
+                            console.log('Could not parse JSON from Gemini response:', text);
                         }
                     }
-                    // Send chat response
-                    if (data.text) {
-                        this.send({
-                            type: 'chat-message',
-                            payload: {
-                                message: data.text,
-                                from: 'Gemini-AI'
-                            }
-                        });
+                    catch (e) {
+                        console.error('Error calling Gemini API:', e);
                     }
-                    // Play notes
-                    if (data.notes && Array.isArray(data.notes)) {
-                        console.log('Gemini generated notes:', data.notes);
-                        let currentTime = 0;
-                        let maxEndTime = 0;
-                        for (const n of data.notes) {
-                            const t = setTimeout(() => {
-                                this.playNote(n.note, n.duration, playInstrument);
-                            }, currentTime + (n.time || 0));
-                            this.scheduledTimeouts.push(t);
-                            currentTime += n.time || 0;
-                            // Estimate duration in ms (rough approximation for '4n' etc if needed, but assuming s/ms for now or standard Tone.js)
-                            // For simplicity in server-side timeout, we might need a helper or just assume a safe buffer.
-                            // Since we don't have Tone.js here, we rely on the fact that 'time' is in ms.
-                            // Duration is tricky. Let's assume a minimum or try to parse 's'.
-                            let durationMs = 500; // default
-                            if (n.duration.endsWith('s')) {
-                                durationMs = parseFloat(n.duration) * 1000;
-                            }
-                            else if (n.duration === '4n')
-                                durationMs = 500;
-                            else if (n.duration === '2n')
-                                durationMs = 1000;
-                            else if (n.duration === '1n')
-                                durationMs = 2000;
-                            else if (n.duration === '8n')
-                                durationMs = 250;
-                            maxEndTime = Math.max(maxEndTime, currentTime + durationMs);
+                },
+                sendInstrumentChange(instrument) {
+                    this.send({
+                        type: 'instrument-change',
+                        payload: {
+                            userId: 'Gemini-AI',
+                            instrument: instrument
                         }
-                        // Revert instrument if needed
-                        if (shouldRevert) {
-                            const t = setTimeout(() => {
-                                this.sendInstrumentChange(previousInstrument);
-                                console.log(`Reverting instrument to ${previousInstrument}`);
-                            }, maxEndTime + 500); // Add buffer
-                            this.scheduledTimeouts.push(t);
-                        }
-                    }
-                }
-                catch (e) {
-                    console.error('Failed to parse extracted JSON:', jsonStr, e);
+                    });
                 }
             }
-            else {
-                console.log('Could not parse JSON from Gemini response:', text);
-            }
-        }
-        catch (e) {
-            console.error('Error calling Gemini API:', e);
-        }
+        });
     }
 }
 exports.WebSocketClient = WebSocketClient;

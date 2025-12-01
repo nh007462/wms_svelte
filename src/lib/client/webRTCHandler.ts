@@ -13,6 +13,7 @@ export const lastRemoteNoteEvent: Writable<{
 	type: 'on' | 'off';
 	userId: string;
 } | null> = writable(null);
+export const aiCountdown: Writable<number | null> = writable(null);
 
 export interface ChatMessage {
 	from: string;
@@ -358,6 +359,19 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 				participants.update((list) =>
 					list.map((p) => (p.id === userId ? { ...p, instrument } : p))
 				);
+				break;
+			}
+			case 'ai-countdown': {
+				aiCountdown.set(3);
+				const interval = setInterval(() => {
+					aiCountdown.update((n) => {
+						if (n === null || n <= 1) {
+							clearInterval(interval);
+							return null;
+						}
+						return n - 1;
+					});
+				}, 1000);
 				break;
 			}
 		}

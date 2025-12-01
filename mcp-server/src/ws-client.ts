@@ -12,7 +12,7 @@ export class WebSocketClient {
 	private currentInstrument: string = 'piano';
 	private currentRoomId: string | null = null;
 
-	constructor(url: string = process.env.WS_URL || 'ws://localhost:5173/ws') {
+	constructor(url: string = process.env.WS_URL || 'ws://localhost:3000/ws') {
 		this.url = url;
 		const apiKey = process.env.GEMINI_API_KEY;
 		if (apiKey) {
@@ -239,8 +239,15 @@ export class WebSocketClient {
 					// Play notes
 					if (data.notes && Array.isArray(data.notes)) {
 						console.log('Gemini generated notes:', data.notes);
-						let currentTime = 0;
-						let maxEndTime = 0;
+
+						// Send countdown signal
+						this.send({
+							type: 'ai-countdown',
+							payload: { roomId: this.currentRoomId }
+						});
+
+						let currentTime = 4000; // Delay for countdown (3, 2, 1, GO)
+						let maxEndTime = 4000;
 
 						for (const n of data.notes) {
 							const t = setTimeout(

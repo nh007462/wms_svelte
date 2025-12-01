@@ -114,18 +114,25 @@
 	let playingNotes = new Set<string>();
 
 	// 他ユーザーの押下状態
-	// Key: 音名 (例: "C4"), Value: 押しているユーザーIDの集合
-	let remoteActiveKeys = new Map<string, Set<string>>();
+	// Key: 音名 (例: "C4"), Value: Map<User ID, Count> (同じユーザーが重ねて鳴らした場合の対策)
+	let remoteActiveKeys = new Map<string, Map<string, number>>();
 
 	export function handleRemoteNote(note: string, type: 'on' | 'off', userId: string) {
 		if (!remoteActiveKeys.has(note)) {
-			remoteActiveKeys.set(note, new Set());
+			remoteActiveKeys.set(note, new Map());
 		}
-		const users = remoteActiveKeys.get(note)!;
+		const userCounts = remoteActiveKeys.get(note)!;
+		const currentCount = userCounts.get(userId) || 0;
+
 		if (type === 'on') {
-			users.add(userId);
+			userCounts.set(userId, currentCount + 1);
 		} else {
-			users.delete(userId);
+			if (currentCount > 0) {
+				userCounts.set(userId, currentCount - 1);
+				if (userCounts.get(userId) === 0) {
+					userCounts.delete(userId);
+				}
+			}
 		}
 		remoteActiveKeys = new Map(remoteActiveKeys); // Trigger reactivity
 	}
@@ -145,11 +152,12 @@
 		note: string,
 		isBlack: boolean,
 		_localNotes: Set<string>,
-		_remoteNotes: Map<string, Set<string>>
+		_remoteNotes: Map<string, Map<string, number>>
 	): string {
 		const localActive = _localNotes.has(note);
-		const remoteUsers = _remoteNotes.get(note) || new Set();
-		const remoteCount = remoteUsers.size;
+		const remoteUsersMap = _remoteNotes.get(note);
+		const remoteUsers = remoteUsersMap ? Array.from(remoteUsersMap.keys()) : [];
+		const remoteCount = remoteUsers.length;
 
 		let background = '';
 		let border = '';
@@ -157,7 +165,7 @@
 		if (localActive && remoteCount > 0) {
 			// Local + Remote
 			background = isBlack ? '#06b6d4' : '#a5f3fc'; // Cyan-500 / Cyan-200
-			const firstRemoteUser = Array.from(remoteUsers)[0];
+			const firstRemoteUser = remoteUsers[0];
 			const borderColor = getUserColor(firstRemoteUser);
 			border = `border: 4px solid ${borderColor}; box-sizing: border-box;`;
 		} else if (localActive) {
@@ -166,11 +174,11 @@
 		} else if (remoteCount > 0) {
 			// Remote only
 			if (remoteCount === 1) {
-				const userId = Array.from(remoteUsers)[0];
+				const userId = remoteUsers[0];
 				background = getUserColor(userId);
 			} else {
 				// Multiple remote users: Stripe
-				const colors = Array.from(remoteUsers).map((u) => getUserColor(u));
+				const colors = remoteUsers.map((u) => getUserColor(u));
 				const step = 100 / colors.length;
 				const gradientParts = colors.map((c, i) => `${c} ${i * step}%, ${c} ${(i + 1) * step}%`);
 				background = `linear-gradient(90deg, ${gradientParts.join(', ')})`;
