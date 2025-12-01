@@ -353,6 +353,13 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 				handleUserLeft((payload as { id: string }).id);
 				break;
 			}
+			case 'instrument-change': {
+				const { userId, instrument } = payload as { userId: string; instrument: string };
+				participants.update((list) =>
+					list.map((p) => (p.id === userId ? { ...p, instrument } : p))
+				);
+				break;
+			}
 		}
 	} catch (e) {
 		console.error('Failed to handle WebSocket message:', e);

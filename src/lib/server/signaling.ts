@@ -258,6 +258,29 @@ export function setupWebSocket(server: UpgradeableServer) {
 						});
 						break;
 					}
+
+					case 'instrument-change': {
+						if (!rooms[roomId!]) return;
+						const { instrument } = payload;
+
+						// Update server state
+						if (rooms[roomId!][ws.id]) {
+							rooms[roomId!][ws.id].instrument = instrument;
+						}
+
+						// Broadcast to others
+						Object.entries(rooms[roomId!]).forEach(([id, clientData]) => {
+							if (id !== ws.id && clientData.ws.readyState === WebSocket.OPEN) {
+								clientData.ws.send(
+									JSON.stringify({
+										type: 'instrument-change',
+										payload: { userId: ws.id, instrument }
+									})
+								);
+							}
+						});
+						break;
+					}
 				}
 			} catch (e) {
 				console.error('Failed to process message:', e);

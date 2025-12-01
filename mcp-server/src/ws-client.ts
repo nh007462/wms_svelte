@@ -8,8 +8,11 @@ export class WebSocketClient {
 	private reconnectInterval: number = 3000;
 	private genAI: GoogleGenerativeAI | null = null;
 	private model: any = null;
+	private scheduledTimeouts: NodeJS.Timeout[] = [];
+	private currentInstrument: string = 'piano';
+	private currentRoomId: string | null = null;
 
-	constructor(url: string = process.env.WS_URL || 'ws://localhost:3000/ws') {
+	constructor(url: string = process.env.WS_URL || 'ws://localhost:5173/ws') {
 		this.url = url;
 		const apiKey = process.env.GEMINI_API_KEY;
 		if (apiKey) {
@@ -28,14 +31,7 @@ export class WebSocketClient {
 			console.log('Connected to SvelteKit WebSocket');
 			this.isConnected = true;
 			// Handshake as Gemini-AI
-			this.send({
-				type: 'join-room',
-				payload: {
-					roomId: 'lobby', // Default to lobby or specific room
-					nickname: 'Gemini-AI',
-					instrument: 'piano'
-				}
-			});
+			this.joinRoom('lobby');
 		});
 
 		this.ws.on('message', (data: any) => {
@@ -44,14 +40,25 @@ export class WebSocketClient {
 				if (message.type === 'summon-ai') {
 					const roomId = message.payload.roomId;
 					console.log(`Received summon request for room: ${roomId}`);
+					this.clearScheduledNotes();
+					this.currentInstrument = 'piano'; // Reset instrument on new summon
+					this.currentRoomId = roomId;
 					this.joinRoom(roomId);
 				} else if (message.type === 'dismiss-ai') {
 					const roomId = message.payload.roomId;
 					console.log(`Received dismiss request for room: ${roomId}`);
-					this.joinRoom('lobby');
+					if (this.currentRoomId === roomId) {
+						this.clearScheduledNotes();
+						this.currentInstrument = 'piano';
+						this.currentRoomId = null;
+						this.joinRoom('lobby');
+					}
 				} else if (message.type === 'chat-message') {
-					const { message: chatText, from, nickname } = message.payload;
+					const { message: chatText, from, nickname, roomId } = message.payload;
 					console.log(`Received chat from ${nickname} (${from}): ${chatText}`);
+
+					// Ignore messages if not in the same room (though socket join should handle this, safety check)
+					if (this.currentRoomId && roomId && this.currentRoomId !== roomId) return;
 
 					if (nickname === 'Gemini-AI') return;
 
@@ -59,7 +66,7 @@ export class WebSocketClient {
 					if (chatText.toLowerCase().startsWith('play ')) {
 						const note = chatText.split(' ')[1];
 						if (note) {
-							this.playNote(note);
+							this.playNote(note, '4n', this.currentInstrument);
 							console.log(`Playing ${note} based on chat command`);
 						}
 					}
@@ -78,12 +85,18 @@ export class WebSocketClient {
 		this.ws.on('close', () => {
 			console.log('Disconnected from WebSocket');
 			this.isConnected = false;
+			this.clearScheduledNotes();
 			setTimeout(() => this.connect(), this.reconnectInterval);
 		});
 
 		this.ws.on('error', (err) => {
 			console.error('WebSocket error:', err);
 		});
+	}
+
+	private clearScheduledNotes() {
+		this.scheduledTimeouts.forEach((t) => clearTimeout(t));
+		this.scheduledTimeouts = [];
 	}
 
 	send(data: any) {
@@ -117,29 +130,47 @@ export class WebSocketClient {
 		});
 	}
 
+	private sendInstrumentChange(instrument: string) {
+		this.send({
+			type: 'instrument-change',
+			payload: {
+				userId: 'Gemini-AI',
+				instrument: instrument
+			}
+		});
+	}
+
 	private async handleGeminiChat(prompt: string) {
 		try {
 			const systemPrompt = `
 あなたはAIミュージシャンです。自然言語のリクエストや楽譜データを受けて音楽を演奏します。
+現在の楽器: ${this.currentInstrument}
+
 以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
 
 重要ルール（絶対遵守）:
-1. **コードの展開**:
+1. **楽器の変更**:
+   - ユーザーから「この後もずっとこの楽器で」といった指示がある場合、\`keepInstrument: true\` にしてください。
+   - 指示がない場合、今回だけ変更して次回はデフォルト(piano)に戻るため、\`keepInstrument: false\` (または省略) にしてください。
+   - 楽器名は英語で指定 (例: piano, guitar-acoustic, violin, synth-lead 等)。
+2. **コードの展開**:
    - コード名は必ず構成音に展開してください。
    - **M7, m7, 7, dim7** などの指定がある場合は、必ず **4和音（4つの音）** にしてください。省略してはいけません。
    - 異名同音に注意してください (例: Cb = B)。"Cb" と書かれていたら Bメジャー (B, D#, F#) または Cbメジャー (Cb, Eb, Gb) の音を出してください。Bb (A#) ではありません。
-2. **時間とタイミング**:
+3. **時間とタイミング**:
    - 楽譜に「秒数」や「拍数」がある場合、その値を **duration** に反映してください (例: "1.455s")。
    - **time** は「前の和音からの待機時間」です。
      - 1つ目の和音: time = 0
      - 2つ目の和音: time = 1つ目の和音の長さ(ms)
      - 3つ目の和音: time = 2つ目の和音の長さ(ms)
    - 和音の中の構成音（2つ目以降）は、**time = 0** にして同時に鳴らしてください。
-3. **音名表記**: 必ず「科学的ピッチ表記法」 (例: C4, D#5) で指定してください。
+4. **音名表記**: 必ず「科学的ピッチ表記法」 (例: C4, D#5) で指定してください。
 
 出力フォーマット:
 {
   "text": "短い返答（日本語で20文字以内）",
+  "instrument": "使用する楽器名 (省略可, デフォルトは現在の楽器)",
+  "keepInstrument": true/false,
   "notes": [
     {
       "note": "音名 (例: C4, D#5)",
@@ -162,7 +193,7 @@ export class WebSocketClient {
   ]
 }
 
-リクエスト: ${prompt}
+リクエスト: ${JSON.stringify(prompt)}
 `;
 			const result = await this.model.generateContent(systemPrompt);
 			const response = await result.response;
@@ -177,6 +208,22 @@ export class WebSocketClient {
 				const jsonStr = jsonMatch[0];
 				try {
 					const data = JSON.parse(jsonStr);
+
+					// Handle instrument logic
+					let playInstrument = this.currentInstrument;
+					let shouldRevert = false;
+					const previousInstrument = this.currentInstrument;
+
+					if (data.instrument && data.instrument !== this.currentInstrument) {
+						playInstrument = data.instrument;
+						if (data.keepInstrument) {
+							this.currentInstrument = data.instrument;
+							this.sendInstrumentChange(this.currentInstrument);
+						} else {
+							shouldRevert = true;
+							this.sendInstrumentChange(playInstrument);
+						}
+					}
 
 					// Send chat response
 					if (data.text) {
@@ -193,14 +240,40 @@ export class WebSocketClient {
 					if (data.notes && Array.isArray(data.notes)) {
 						console.log('Gemini generated notes:', data.notes);
 						let currentTime = 0;
+						let maxEndTime = 0;
+
 						for (const n of data.notes) {
-							setTimeout(
+							const t = setTimeout(
 								() => {
-									this.playNote(n.note, n.duration);
+									this.playNote(n.note, n.duration, playInstrument);
 								},
 								currentTime + (n.time || 0)
 							);
+							this.scheduledTimeouts.push(t);
 							currentTime += n.time || 0;
+
+							// Estimate duration in ms (rough approximation for '4n' etc if needed, but assuming s/ms for now or standard Tone.js)
+							// For simplicity in server-side timeout, we might need a helper or just assume a safe buffer.
+							// Since we don't have Tone.js here, we rely on the fact that 'time' is in ms.
+							// Duration is tricky. Let's assume a minimum or try to parse 's'.
+							let durationMs = 500; // default
+							if (n.duration.endsWith('s')) {
+								durationMs = parseFloat(n.duration) * 1000;
+							} else if (n.duration === '4n') durationMs = 500;
+							else if (n.duration === '2n') durationMs = 1000;
+							else if (n.duration === '1n') durationMs = 2000;
+							else if (n.duration === '8n') durationMs = 250;
+
+							maxEndTime = Math.max(maxEndTime, currentTime + durationMs);
+						}
+
+						// Revert instrument if needed
+						if (shouldRevert) {
+							const t = setTimeout(() => {
+								this.sendInstrumentChange(previousInstrument);
+								console.log(`Reverting instrument to ${previousInstrument}`);
+							}, maxEndTime + 500); // Add buffer
+							this.scheduledTimeouts.push(t);
 						}
 					}
 				} catch (e) {

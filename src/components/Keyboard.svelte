@@ -257,7 +257,7 @@
 				velocity = 1;
 			} else {
 				notes = getChordNotes(rootNote);
-				velocity = 0.6;
+				velocity = 1;
 			}
 
 			notes.forEach((n) => {
