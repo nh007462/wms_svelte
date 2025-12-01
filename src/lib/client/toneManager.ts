@@ -233,6 +233,10 @@ class ToneManager {
 		Tone.getDestination().connect(dest);
 		return dest.stream;
 	}
+
+	public getDurationInMs(duration: string): number {
+		return Tone.Time(duration).toMilliseconds();
+	}
 }
 
 export const toneManager = new ToneManager();

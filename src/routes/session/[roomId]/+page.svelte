@@ -25,7 +25,8 @@
 		summonAI,
 		dismissAI,
 		chatMessages,
-		sendChatMessage
+		sendChatMessage,
+		lastRemoteNoteEvent
 	} from '$lib/client/webRTCHandler.js';
 	import type { Participant } from '$lib/client/webRTCHandler.js';
 
@@ -43,6 +44,7 @@
 	let isModalOpen = true;
 	let isChatOpen = false;
 	let isAIThinking = false;
+	let keyboard: Keyboard;
 
 	$: isAIHere = $participants.some((p) => p.nickname === 'Gemini-AI');
 
@@ -65,6 +67,13 @@
 	}
 
 	onMount(() => {
+		// Subscribe to remote note events
+		const unsubscribeNotes = lastRemoteNoteEvent.subscribe((event) => {
+			if (event && keyboard) {
+				keyboard.handleRemoteNote(event.note, event.type, event.userId);
+			}
+		});
+
 		// ★★★ デバッグ用にwindowオブジェクトに関数を登録 ★★★
 		(window as any).debugNoteOn = (note: string) => {
 			// ストアから現在の楽器を取得
@@ -86,6 +95,7 @@
 		nickname = localStorage.getItem('nickname');
 
 		return () => {
+			unsubscribeNotes();
 			disconnect();
 		};
 	});
@@ -207,6 +217,7 @@
 					</div>
 
 					<Keyboard
+						bind:this={keyboard}
 						on:noteDown={(e) => audioHandleNoteDown(e.detail.note, true, e.detail.velocity)}
 						on:noteUp={(e) => audioHandleNoteUp(e.detail, true)}
 					/>

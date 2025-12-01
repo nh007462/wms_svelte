@@ -8,6 +8,11 @@ export const localId: Writable<string | null> = writable(null);
 export const localNickname: Writable<string | null> = writable(null);
 export const isConnected: Writable<boolean> = writable(false);
 export const remoteStreams: Writable<MediaStream[]> = writable([]);
+export const lastRemoteNoteEvent: Writable<{
+	note: string;
+	type: 'on' | 'off';
+	userId: string;
+} | null> = writable(null);
 
 export interface ChatMessage {
 	from: string;
@@ -156,10 +161,24 @@ function createPeerConnection(
 					case 'noteOn': {
 						// Always play note from DataChannel as instruments are no longer mixed in audio stream
 						toneManager.noteOn(data.instrument, data.note);
+						if (Array.isArray(data.note)) {
+							data.note.forEach((n) => {
+								lastRemoteNoteEvent.set({ note: n, type: 'on', userId: peerId });
+							});
+						} else {
+							lastRemoteNoteEvent.set({ note: data.note, type: 'on', userId: peerId });
+						}
 						break;
 					}
 					case 'noteOff':
 						toneManager.noteOff(data.instrument, data.note);
+						if (Array.isArray(data.note)) {
+							data.note.forEach((n) => {
+								lastRemoteNoteEvent.set({ note: n, type: 'off', userId: peerId });
+							});
+						} else {
+							lastRemoteNoteEvent.set({ note: data.note, type: 'off', userId: peerId });
+						}
 						break;
 					case 'instrumentChange':
 						participants.update((list) =>
@@ -264,6 +283,10 @@ async function handleWebSocketMessage(event: MessageEvent): Promise<void> {
 					instrument: string;
 				};
 				toneManager.triggerAttackRelease(note, duration, instrument);
+				lastRemoteNoteEvent.set({ note, type: 'on', userId: 'AI' });
+				setTimeout(() => {
+					lastRemoteNoteEvent.set({ note, type: 'off', userId: 'AI' });
+				}, toneManager.getDurationInMs(duration));
 				break;
 			}
 			case 'signal': {

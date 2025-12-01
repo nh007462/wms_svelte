@@ -113,6 +113,76 @@
 	// 現在鳴っている全ての音（表示用および重複管理用）
 	let playingNotes = new Set<string>();
 
+	// 他ユーザーの押下状態
+	// Key: 音名 (例: "C4"), Value: 押しているユーザーIDの集合
+	let remoteActiveKeys = new Map<string, Set<string>>();
+
+	export function handleRemoteNote(note: string, type: 'on' | 'off', userId: string) {
+		if (!remoteActiveKeys.has(note)) {
+			remoteActiveKeys.set(note, new Set());
+		}
+		const users = remoteActiveKeys.get(note)!;
+		if (type === 'on') {
+			users.add(userId);
+		} else {
+			users.delete(userId);
+		}
+		remoteActiveKeys = new Map(remoteActiveKeys); // Trigger reactivity
+	}
+
+	function getUserColor(userId: string): string {
+		if (userId === 'AI') return '#9333ea'; // Purple-600
+		let hash = 0;
+		for (let i = 0; i < userId.length; i++) {
+			hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+		}
+		const c = (hash & 0x00ffffff).toString(16).toUpperCase();
+		// Return solid color (no opacity)
+		return '#' + '00000'.substring(0, 6 - c.length) + c;
+	}
+
+	function getKeyStyle(
+		note: string,
+		isBlack: boolean,
+		_localNotes: Set<string>,
+		_remoteNotes: Map<string, Set<string>>
+	): string {
+		const localActive = _localNotes.has(note);
+		const remoteUsers = _remoteNotes.get(note) || new Set();
+		const remoteCount = remoteUsers.size;
+
+		let background = '';
+		let border = '';
+
+		if (localActive && remoteCount > 0) {
+			// Local + Remote
+			background = isBlack ? '#06b6d4' : '#a5f3fc'; // Cyan-500 / Cyan-200
+			const firstRemoteUser = Array.from(remoteUsers)[0];
+			const borderColor = getUserColor(firstRemoteUser);
+			border = `border: 4px solid ${borderColor}; box-sizing: border-box;`;
+		} else if (localActive) {
+			// Local only
+			background = isBlack ? '#06b6d4' : '#a5f3fc';
+		} else if (remoteCount > 0) {
+			// Remote only
+			if (remoteCount === 1) {
+				const userId = Array.from(remoteUsers)[0];
+				background = getUserColor(userId);
+			} else {
+				// Multiple remote users: Stripe
+				const colors = Array.from(remoteUsers).map((u) => getUserColor(u));
+				const step = 100 / colors.length;
+				const gradientParts = colors.map((c, i) => `${c} ${i * step}%, ${c} ${(i + 1) * step}%`);
+				background = `linear-gradient(90deg, ${gradientParts.join(', ')})`;
+			}
+		} else {
+			// Inactive
+			background = isBlack ? 'black' : 'white';
+		}
+
+		return `background: ${background}; ${border}`;
+	}
+
 	function getNoteIndex(note: string): number {
 		const name = note.slice(0, -1);
 		const octave = parseInt(note.slice(-1));
@@ -214,8 +284,8 @@
 			}
 		}
 
-		// Svelteのリアクティビティのために再代入
-		playingNotes = playingNotes;
+		// Svelteのリアクティビティのために再代入 (新しい参照を作成)
+		playingNotes = new Set(playingNotes);
 	}
 
 	function handleMouseDown(e: MouseEvent, note: string) {
@@ -330,9 +400,12 @@
 						on:mousedown={(e) => handleMouseDown(e, note)}
 						on:mouseenter={() => handleMouseEnter(note)}
 						class="relative h-full border-l border-r border-b border-gray-700 transition-colors duration-75 pointer-events-auto outline-none focus:outline-none"
-						class:bg-cyan-200={playingNotes.has(note)}
-						class:bg-white={!playingNotes.has(note)}
-						style="flex: 1 0 calc(100% / {whiteKeyCount});"
+						style="flex: 1 0 calc(100% / {whiteKeyCount}); {getKeyStyle(
+							note,
+							false,
+							playingNotes,
+							remoteActiveKeys
+						)}"
 					>
 						<span
 							class="absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-gray-500 pointer-events-none"
@@ -358,12 +431,11 @@
 						}}
 						on:mouseenter={() => handleMouseEnter(note)}
 						class="absolute top-0 h-2/3 w-[60%] border border-gray-700 rounded-b transition-colors duration-75 pointer-events-auto outline-none focus:outline-none"
-						class:bg-cyan-500={playingNotes.has(note)}
-						class:bg-black={!playingNotes.has(note)}
 						style="
 							left: calc(({whiteKeyIndex} + {leftOffset}) * (100% / {whiteKeyCount}));
 							transform: translateX(-50%);
 							max-width: 24px;
+							{getKeyStyle(note, true, playingNotes, remoteActiveKeys)}
 						"
 					></button>
 				{/if}
