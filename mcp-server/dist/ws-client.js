@@ -16,17 +16,46 @@ class WebSocketClient {
     scheduledTimeouts = [];
     currentInstrument = 'piano';
     currentRoomId = null;
+    // Rate limiting properties
+    minuteRequests = 0;
+    dayRequests = 0;
+    lastMinuteReset = Date.now();
+    lastDayReset = Date.now();
     constructor(url = process.env.WS_URL || 'ws://localhost:5173/ws') {
         this.url = url;
         const apiKey = process.env.GEMINI_API_KEY;
         if (apiKey) {
             this.genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
-            this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+            this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
         }
         else {
             console.warn('GEMINI_API_KEY not found. AI features will be limited.');
         }
         this.connect();
+    }
+    checkRateLimit() {
+        const now = Date.now();
+        // Reset minute counter if 1 minute has passed
+        if (now - this.lastMinuteReset > 60000) {
+            this.minuteRequests = 0;
+            this.lastMinuteReset = now;
+        }
+        // Reset day counter if 24 hours have passed
+        if (now - this.lastDayReset > 86400000) {
+            this.dayRequests = 0;
+            this.lastDayReset = now;
+        }
+        if (this.minuteRequests >= 15) {
+            console.warn('Rate limit exceeded: 15 requests per minute.');
+            return false;
+        }
+        if (this.dayRequests >= 1000) {
+            console.warn('Rate limit exceeded: 1000 requests per day.');
+            return false;
+        }
+        this.minuteRequests++;
+        this.dayRequests++;
+        return true;
     }
     connect() {
         this.ws = new ws_1.default(this.url);
@@ -124,12 +153,33 @@ class WebSocketClient {
             type: 'ai-play-note',
             payload: {
                 instrument: instrument,
-                async handleGeminiChat(prompt) {
-                    try {
-                        const systemPrompt = `
-あなたはプロのAIミュージシャンです。ユーザーのリクエストに合わせて、感情豊かで人間らしい演奏を生成してください。
-現在の楽器: ${this.currentInstrument}
-
+                note: note,
+                duration: duration
+            }
+        });
+    }
+    sendInstrumentChange(instrument) {
+        this.send({
+            type: 'instrument-change',
+            payload: {
+                userId: 'Gemini-AI',
+                instrument: instrument
+            }
+        });
+    }
+    async handleGeminiChat(prompt) {
+        if (!this.checkRateLimit()) {
+            this.send({
+                type: 'chat-message',
+                payload: {
+                    message: '申し訳ありません。リクエスト制限を超えました。少し待ってから再度お試しください。',
+                    from: 'Gemini-AI'
+                }
+            });
+            return;
+        }
+        try {
+            const systemPrompt = `
 以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
 
 重要ルール（絶対遵守）:
@@ -178,109 +228,97 @@ class WebSocketClient {
 
 リクエスト: ${JSON.stringify(prompt)}
 `;
-                        const result = await this.model.generateContent(systemPrompt);
-                        const response = await result.response;
-                        let text = response.text();
-                        // Clean up markdown code blocks if present
-                        text = text.replace(/```json\n?/g, '').replace(/```/g, '');
-                        // Extract JSON
-                        const jsonMatch = text.match(/\{[\s\S]*\}/);
-                        if (jsonMatch) {
-                            const jsonStr = jsonMatch[0];
-                            try {
-                                const data = JSON.parse(jsonStr);
-                                // Handle instrument logic
-                                let playInstrument = this.currentInstrument;
-                                let shouldRevert = false;
-                                const previousInstrument = this.currentInstrument;
-                                if (data.instrument && data.instrument !== this.currentInstrument) {
-                                    playInstrument = data.instrument;
-                                    if (data.keepInstrument) {
-                                        this.currentInstrument = data.instrument;
-                                        this.sendInstrumentChange(this.currentInstrument);
-                                    }
-                                    else {
-                                        shouldRevert = true;
-                                        this.sendInstrumentChange(playInstrument);
-                                    }
-                                }
-                                // Send chat response
-                                if (data.text) {
-                                    this.send({
-                                        type: 'chat-message',
-                                        payload: {
-                                            message: data.text,
-                                            from: 'Gemini-AI'
-                                        }
-                                    });
-                                }
-                                // Play notes
-                                if (data.notes && Array.isArray(data.notes)) {
-                                    console.log('Gemini generated notes:', data.notes);
-                                    // Send countdown signal
-                                    this.send({
-                                        type: 'ai-countdown',
-                                        payload: { roomId: this.currentRoomId }
-                                    });
-                                    let currentTime = 4000; // Delay for countdown (3, 2, 1, GO)
-                                    let maxEndTime = 4000;
-                                    for (const n of data.notes) {
-                                        const t = setTimeout(() => {
-                                            this.playNote(n.note, n.duration, playInstrument);
-                                        }, currentTime + (n.time || 0));
-                                        this.scheduledTimeouts.push(t);
-                                        currentTime += n.time || 0;
-                                        // Estimate duration in ms (rough approximation for '4n' etc if needed, but assuming s/ms for now or standard Tone.js)
-                                        // For simplicity in server-side timeout, we might need a helper or just assume a safe buffer.
-                                        // Since we don't have Tone.js here, we rely on the fact that 'time' is in ms.
-                                        // Duration is tricky. Let's assume a minimum or try to parse 's'.
-                                        let durationMs = 500; // default
-                                        if (n.duration.endsWith('s')) {
-                                            durationMs = parseFloat(n.duration) * 1000;
-                                        }
-                                        else if (n.duration === '4n')
-                                            durationMs = 500;
-                                        else if (n.duration === '2n')
-                                            durationMs = 1000;
-                                        else if (n.duration === '1n')
-                                            durationMs = 2000;
-                                        else if (n.duration === '8n')
-                                            durationMs = 250;
-                                        maxEndTime = Math.max(maxEndTime, currentTime + durationMs);
-                                    }
-                                    // Revert instrument if needed
-                                    if (shouldRevert) {
-                                        const t = setTimeout(() => {
-                                            this.sendInstrumentChange(previousInstrument);
-                                            console.log(`Reverting instrument to ${previousInstrument}`);
-                                        }, maxEndTime + 500); // Add buffer
-                                        this.scheduledTimeouts.push(t);
-                                    }
-                                }
-                            }
-                            catch (e) {
-                                console.error('Failed to parse extracted JSON:', jsonStr, e);
-                            }
+            const result = await this.model.generateContent(systemPrompt);
+            const response = await result.response;
+            let text = response.text();
+            // Clean up markdown code blocks if present
+            text = text.replace(/```json\n?/g, '').replace(/```/g, '');
+            // Extract JSON
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const jsonStr = jsonMatch[0];
+                try {
+                    const data = JSON.parse(jsonStr);
+                    // Handle instrument logic
+                    let playInstrument = this.currentInstrument;
+                    let shouldRevert = false;
+                    const previousInstrument = this.currentInstrument;
+                    if (data.instrument && data.instrument !== this.currentInstrument) {
+                        playInstrument = data.instrument;
+                        if (data.keepInstrument) {
+                            this.currentInstrument = data.instrument;
+                            this.sendInstrumentChange(this.currentInstrument);
                         }
                         else {
-                            console.log('Could not parse JSON from Gemini response:', text);
+                            shouldRevert = true;
+                            this.sendInstrumentChange(playInstrument);
                         }
                     }
-                    catch (e) {
-                        console.error('Error calling Gemini API:', e);
+                    // Send chat response
+                    if (data.text) {
+                        this.send({
+                            type: 'chat-message',
+                            payload: {
+                                message: data.text,
+                                from: 'Gemini-AI'
+                            }
+                        });
                     }
-                },
-                sendInstrumentChange(instrument) {
-                    this.send({
-                        type: 'instrument-change',
-                        payload: {
-                            userId: 'Gemini-AI',
-                            instrument: instrument
+                    // Play notes
+                    if (data.notes && Array.isArray(data.notes)) {
+                        console.log('Gemini generated notes:', data.notes);
+                        // Send countdown signal
+                        this.send({
+                            type: 'ai-countdown',
+                            payload: { roomId: this.currentRoomId }
+                        });
+                        let currentTime = 4000; // Delay for countdown (3, 2, 1, GO)
+                        let maxEndTime = 4000;
+                        for (const n of data.notes) {
+                            const t = setTimeout(() => {
+                                this.playNote(n.note, n.duration, playInstrument);
+                            }, currentTime + (n.time || 0));
+                            this.scheduledTimeouts.push(t);
+                            currentTime += n.time || 0;
+                            // Estimate duration in ms (rough approximation for '4n' etc if needed, but assuming s/ms for now or standard Tone.js)
+                            // For simplicity in server-side timeout, we might need a helper or just assume a safe buffer.
+                            // Since we don't have Tone.js here, we rely on the fact that 'time' is in ms.
+                            // Duration is tricky. Let's assume a minimum or try to parse 's'.
+                            let durationMs = 500; // default
+                            if (n.duration.endsWith('s')) {
+                                durationMs = parseFloat(n.duration) * 1000;
+                            }
+                            else if (n.duration === '4n')
+                                durationMs = 500;
+                            else if (n.duration === '2n')
+                                durationMs = 1000;
+                            else if (n.duration === '1n')
+                                durationMs = 2000;
+                            else if (n.duration === '8n')
+                                durationMs = 250;
+                            maxEndTime = Math.max(maxEndTime, currentTime + durationMs);
                         }
-                    });
+                        // Revert instrument if needed
+                        if (shouldRevert) {
+                            const t = setTimeout(() => {
+                                this.sendInstrumentChange(previousInstrument);
+                                console.log(`Reverting instrument to ${previousInstrument}`);
+                            }, maxEndTime + 500); // Add buffer
+                            this.scheduledTimeouts.push(t);
+                        }
+                    }
+                }
+                catch (e) {
+                    console.error('Failed to parse extracted JSON:', jsonStr, e);
                 }
             }
-        });
+            else {
+                console.log('Could not parse JSON from Gemini response:', text);
+            }
+        }
+        catch (e) {
+            console.error('Error calling Gemini API:', e);
+        }
     }
 }
 exports.WebSocketClient = WebSocketClient;

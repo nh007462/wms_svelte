@@ -12,16 +12,52 @@ export class WebSocketClient {
 	private currentInstrument: string = 'piano';
 	private currentRoomId: string | null = null;
 
+	// Rate limiting properties
+	private minuteRequests: number = 0;
+	private dayRequests: number = 0;
+	private lastMinuteReset: number = Date.now();
+	private lastDayReset: number = Date.now();
+
 	constructor(url: string = process.env.WS_URL || 'ws://localhost:3000/ws') {
 		this.url = url;
 		const apiKey = process.env.GEMINI_API_KEY;
 		if (apiKey) {
 			this.genAI = new GoogleGenerativeAI(apiKey);
-			this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+			this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 		} else {
 			console.warn('GEMINI_API_KEY not found. AI features will be limited.');
 		}
 		this.connect();
+	}
+
+	private checkRateLimit(): boolean {
+		const now = Date.now();
+
+		// Reset minute counter if 1 minute has passed
+		if (now - this.lastMinuteReset > 60000) {
+			this.minuteRequests = 0;
+			this.lastMinuteReset = now;
+		}
+
+		// Reset day counter if 24 hours have passed
+		if (now - this.lastDayReset > 86400000) {
+			this.dayRequests = 0;
+			this.lastDayReset = now;
+		}
+
+		if (this.minuteRequests >= 15) {
+			console.warn('Rate limit exceeded: 15 requests per minute.');
+			return false;
+		}
+
+		if (this.dayRequests >= 1000) {
+			console.warn('Rate limit exceeded: 1000 requests per day.');
+			return false;
+		}
+
+		this.minuteRequests++;
+		this.dayRequests++;
+		return true;
 	}
 
 	private connect() {
@@ -141,6 +177,18 @@ export class WebSocketClient {
 	}
 
 	private async handleGeminiChat(prompt: string) {
+		if (!this.checkRateLimit()) {
+			this.send({
+				type: 'chat-message',
+				payload: {
+					message:
+						'申し訳ありません。リクエスト制限を超えました。少し待ってから再度お試しください。',
+					from: 'Gemini-AI'
+				}
+			});
+			return;
+		}
+
 		try {
 			const systemPrompt = `
 あなたはAIミュージシャンです。自然言語のリクエストや楽譜データを受けて音楽を演奏します。
