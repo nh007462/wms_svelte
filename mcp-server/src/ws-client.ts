@@ -12,18 +12,17 @@ export class WebSocketClient {
 	private currentInstrument: string = 'piano';
 	private currentRoomId: string | null = null;
 
-	// Rate limiting properties
 	private minuteRequests: number = 0;
 	private dayRequests: number = 0;
 	private lastMinuteReset: number = Date.now();
 	private lastDayReset: number = Date.now();
 
-	constructor(url: string = process.env.WS_URL || 'ws://localhost:3000/ws') {
+	constructor(url: string = process.env.WS_URL || 'ws://localhost:5173/ws') {
 		this.url = url;
 		const apiKey = process.env.GEMINI_API_KEY;
 		if (apiKey) {
 			this.genAI = new GoogleGenerativeAI(apiKey);
-			this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+			this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 		} else {
 			console.warn('GEMINI_API_KEY not found. AI features will be limited.');
 		}
@@ -45,13 +44,13 @@ export class WebSocketClient {
 			this.lastDayReset = now;
 		}
 
-		if (this.minuteRequests >= 15) {
-			console.warn('Rate limit exceeded: 15 requests per minute.');
+		if (this.minuteRequests >= 10) {
+			console.warn('Rate limit exceeded: 10 requests per minute.');
 			return false;
 		}
 
-		if (this.dayRequests >= 1000) {
-			console.warn('Rate limit exceeded: 1000 requests per day.');
+		if (this.dayRequests >= 250) {
+			console.warn('Rate limit exceeded: 250 requests per day.');
 			return false;
 		}
 
